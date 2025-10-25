@@ -1,7 +1,8 @@
-﻿// Ruta: /Planta.Api/Program.cs | V1.12
-using System; // para InvalidOperationException
+﻿// Ruta: /Planta.Api/Program.cs | V1.13
+using System;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -12,11 +13,11 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Planta.Api.Health;
 using Planta.Api.Middlewares;
-using Planta.Data.Context;
+using Planta.Data.Context;                 // DbContexts actuales
 using Planta.Infrastructure.Options;
 
 // DI de repos/servicios
-using Planta.Application.Abstractions;
+using Planta.Application.Abstractions;     // IPlantaDbContext (para Mod. D)
 using Planta.Infrastructure.Repositories;
 using Planta.Infrastructure.Services;
 
@@ -51,8 +52,20 @@ builder.Services.AddDbContextFactory<TransporteReadDbContext>(options =>
     options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 });
 
+// ⚠️ Bridge a IPlantaDbContext (activo cuando PlantaDbContext implemente la interfaz)
+builder.Services.AddScoped<IPlantaDbContext>(sp => (IPlantaDbContext)sp.GetRequiredService<PlantaDbContext>());
+
 // 3) Servicios de API
-builder.Services.AddControllers();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddControllers()
+    .AddJsonOptions(o =>
+    {
+        // Evita errores por referencias cíclicas típicas de EF (p. ej., navegación inversa)
+        o.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+        o.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+        o.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+    });
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
@@ -122,7 +135,6 @@ app.UseMiddleware<ErrorHandlingMiddleware>();
 
 app.UseAuthorization();
 
-// /healthz → JSON compacto { status, checks[] }
 static Task WriteHealth(HttpContext ctx, Microsoft.Extensions.Diagnostics.HealthChecks.HealthReport rpt)
 {
     ctx.Response.ContentType = "application/json; charset=utf-8";
