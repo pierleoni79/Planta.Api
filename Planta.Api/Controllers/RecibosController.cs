@@ -1,176 +1,278 @@
-﻿// Ruta: /Planta.Api/Controllers/RecibosController.cs | V1.5
+﻿// Ruta: /Planta.Api/Controllers/RecibosController.cs | V2.8
 using System;
-using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http;                  // StatusCodes
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Planta.Application.Abstractions;
-using Planta.Contracts.Common;
-using Planta.Contracts.Recibos;
+using Microsoft.Extensions.Caching.Memory;
+using Planta.Api.Common;                         // ProblemDetails helpers
+using Planta.Contracts.Recibos;                  // CheckinRequest + ReciboEstado (enum)
+using Planta.Data.Entities;                      // Recibo entity
+using IPlantaDbContext = Planta.Application.Abstractions.IPlantaDbContext;
 
 namespace Planta.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Produces("application/json")]
-[Tags("Recibos")]
 public sealed class RecibosController : ControllerBase
 {
-    private readonly IRecibosService _svc;
+    private readonly IPlantaDbContext _db;
+    private readonly IMemoryCache _cache;
 
-    public RecibosController(IRecibosService svc) => _svc = svc;
+    public RecibosController(IPlantaDbContext db, IMemoryCache cache)
+    {
+        _db = db;
+        _cache = cache;
+    }
 
-    // -------- Helpers comunes (alineados con CatalogosController) --------
-    private static void NormalizePage(ref int page, ref int pageSize)
+    // ========================
+    // ======== GRID ==========
+    // ========================
+
+    [HttpGet("grid")]
+    [ResponseCache(Duration = 60, Location = ResponseCacheLocation.Any, NoStore = false)]
+    public async Task<IActionResult> Grid(
+        int page = 1,
+        int pageSize = 20,
+        int? empresaId = null,
+        int? vehiculoId = null,
+        int? clienteId = null,
+        int? materialId = null,
+        DateTimeOffset? desde = null,
+        DateTimeOffset? hasta = null,
+        string? q = null,
+        CancellationToken ct = default)
     {
         if (page < 1) page = 1;
-        if (pageSize < 1) pageSize = PagedRequest.DefaultPageSize;
-        if (pageSize > PagedRequest.MaxPageSize) pageSize = PagedRequest.MaxPageSize;
-    }
+        if (pageSize <= 0) pageSize = 20;
 
-    private static string ComputeEtag(object payload)
-    {
-        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = false });
-        var bytes = Encoding.UTF8.GetBytes(json);
-        var hash = Convert.ToBase64String(SHA256.HashData(bytes));
-        return $"W/\"{hash}\"";
-    }
+        var etag = await ComputeGridEtagAsync(
+            empresaId, vehiculoId, clienteId, materialId, desde, hasta, q, page, pageSize, ct);
 
-    private static bool MatchesIfNoneMatch(HttpRequest req, string etag)
-    {
-        var raw = req.Headers["If-None-Match"].ToString();
-        if (string.IsNullOrWhiteSpace(raw)) return false;
-        foreach (var t in raw.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))
-            if (t == "*" || string.Equals(t.Trim(), etag, StringComparison.Ordinal))
-                return true;
-        return false;
-    }
-
-    private IActionResult WithEtagOk(object payload, int maxAgeSeconds = 60)
-    {
-        var etag = ComputeEtag(payload);
-
-        if (MatchesIfNoneMatch(Request, etag))
+        var inm = Request.Headers.IfNoneMatch.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(inm) && string.Equals(inm, etag, StringComparison.Ordinal))
         {
             Response.Headers.ETag = etag;
-            Response.Headers["Cache-Control"] = $"public,max-age={maxAgeSeconds}";
+            Response.Headers.CacheControl = "public, max-age=60";
             return StatusCode(StatusCodes.Status304NotModified);
         }
 
+        var baseQ = ApplyFilters(_db.Query<Recibo>(), empresaId, vehiculoId, clienteId, materialId, desde, hasta, q)
+            .AsNoTracking();
+
+        var total = await baseQ.CountAsync(ct);
+
+        var items = await baseQ
+            .OrderByDescending(r => r.FechaCreacion)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(r => new
+            {
+                r.Id,
+                r.EmpresaId,
+                r.Consecutivo,
+                r.FechaCreacion,
+                Estado = (int)r.Estado,
+                r.VehiculoId,
+                Placa = r.PlacaSnapshot,
+                r.ClienteId,
+                r.Cantidad
+            })
+            .ToListAsync(ct);
+
         Response.Headers.ETag = etag;
-        Response.Headers["Cache-Control"] = $"public,max-age={maxAgeSeconds}";
-        return Ok(payload);
+        Response.Headers.CacheControl = "public, max-age=60";
+
+        return Ok(new { page, pageSize, total, items });
     }
 
-    /// <summary>Grid paginado de recibos con filtros básicos.</summary>
-    [HttpGet("grid")]
-    [ResponseCache(Duration = 30, Location = ResponseCacheLocation.Any, VaryByQueryKeys =
-        new[] { "page", "pageSize", "empresaId", "estado", "clienteId", "desde", "hasta", "search" })]
-    [ProducesResponseType(typeof(PagedResult<ReciboListItemDto>), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status304NotModified)]
-    public async Task<IActionResult> Grid(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20,
-        [FromQuery] int? empresaId = null,
-        [FromQuery] int? estado = null,
-        [FromQuery] int? clienteId = null,
-        [FromQuery] DateTimeOffset? desde = null,
-        [FromQuery] DateTimeOffset? hasta = null,
-        [FromQuery] string? search = null,
-        CancellationToken ct = default)
-    {
-        NormalizePage(ref page, ref pageSize);
-        var req = new PagedRequest { Page = page, PageSize = pageSize, Q = search };
+    // ==========================
+    // ======== DETALLE =========
+    // ==========================
 
-        var result = await _svc.ListarAsync(req, empresaId, estado, clienteId, desde, hasta, search, ct);
-        return WithEtagOk(result, maxAgeSeconds: 30);
-    }
-
-    /// <summary>Detalle de un recibo.</summary>
     [HttpGet("{id:guid}")]
-    [ResponseCache(Duration = 60, Location = ResponseCacheLocation.Any, VaryByQueryKeys = new[] { "id" })]
-    [ProducesResponseType(typeof(ReciboDetailDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status304NotModified)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Obtener([FromRoute] Guid id, CancellationToken ct)
+    [ResponseCache(Duration = 60, Location = ResponseCacheLocation.Any, NoStore = false)]
+    public async Task<IActionResult> Obtener(Guid id, CancellationToken ct = default)
     {
-        var dto = await _svc.ObtenerAsync(id, ct);
-        if (dto is null) return NotFound();
-        return WithEtagOk(dto, maxAgeSeconds: 60);
+        var r = await _db.Query<Recibo>()
+            .Where(x => x.Id == id)
+            .AsNoTracking()
+            .Select(x => new
+            {
+                x.Id,
+                x.Activo,
+                x.AlmacenOrigenId,
+                x.AutoGenerado,
+                x.AutoGeneradoEn,
+                x.Cantidad,
+                x.ClienteId,
+                x.ConductorId,
+                x.ConductorNombreSnapshot,
+                x.Consecutivo,
+                x.DestinoTipo,
+                x.EmpresaId,
+                Estado = (int)x.Estado,
+                x.FechaCreacion,
+                x.IdempotencyKey,
+                x.MaterialId,
+                x.NumeroGenerado,
+                x.Observaciones,
+                Placa = x.PlacaSnapshot,
+                x.ReciboFisicoNumero,
+                x.ReciboFisicoNumeroNorm,
+                x.UltimaActualizacion,          // DateTimeOffset?
+                x.UsuarioCreador,
+                x.VehiculoId
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (r is null) return NotFound();
+
+        long last = r.UltimaActualizacion.HasValue ? r.UltimaActualizacion.Value.ToUnixTimeSeconds() : 0L;
+        var etag = $"W/\"{r.Id:N}-{last}-{r.Estado}\"";
+
+        Response.Headers.ETag = etag;
+        Response.Headers.CacheControl = "public, max-age=60";
+        return Ok(r);
     }
 
-    /// <summary>Crea un recibo (idempotente si envías Idempotency-Key).</summary>
-    [HttpPost]
-    [ProducesResponseType(typeof(ReciboDetailDto), StatusCodes.Status201Created)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status409Conflict)]
-    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
-    public async Task<IActionResult> Crear([FromBody] CrearReciboRequest body, CancellationToken ct)
-    {
-        var idemHeader = Request.Headers["Idempotency-Key"].ToString();
-        var user = User?.Identity?.Name ?? "api";
-        try
-        {
-            var dto = await _svc.CrearAsync(body, string.IsNullOrWhiteSpace(idemHeader) ? null : idemHeader, user, ct);
-            return CreatedAtAction(nameof(Obtener), new { id = dto.Id }, dto);
-        }
-        catch (ArgumentException aex)
-        {
-            return UnprocessableEntity(aex.Message);
-        }
-        catch (DbUpdateException ex)
-            when (ex.InnerException?.Message?.Contains("UQ_Recibo_Empresa_Consecutivo", StringComparison.OrdinalIgnoreCase) == true
-               || ex.InnerException?.Message?.Contains("IX_Recibo_Empresa_Consecutivo", StringComparison.OrdinalIgnoreCase) == true)
-        {
-            return Conflict("Ya existe un recibo con el mismo (EmpresaId, Consecutivo).");
-        }
-    }
+    // ==========================
+    // ========= CHECKIN ========
+    // ==========================
 
-    /// <summary>Cambia el estado del recibo con validación de transiciones.</summary>
-    [HttpPut("{id:guid}/estado")]
-    [ProducesResponseType(typeof(ReciboDetailDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> CambiarEstado([FromRoute] Guid id, [FromBody] CambiarEstadoRequest body, CancellationToken ct)
-    {
-        try
-        {
-            var dto = await _svc.CambiarEstadoAsync(id, body.NuevoEstado, body.Comentario, ct);
-            return Ok(dto);
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("no encontrado", StringComparison.OrdinalIgnoreCase))
-        {
-            return NotFound();
-        }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("Transición inválida", StringComparison.OrdinalIgnoreCase))
-        {
-            return BadRequest(ex.Message);
-        }
-    }
-
-    /// <summary>📍 Check-in en planta (EnTransito_Planta ⇒ EnPatioPlanta). Guarda GPS/nota.</summary>
+    /// <summary>
+    /// Check-in en planta: EnTransito_Planta → EnPatioPlanta. Idempotente por IdempotencyKey.
+    /// Valida If-Match (ETag) si el cliente lo envía.
+    /// </summary>
     [HttpPost("{id:guid}/checkin")]
-    [ProducesResponseType(typeof(ReciboDetailDto), StatusCodes.Status200OK)]
-    [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    [ProducesResponseType(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Checkin([FromRoute] Guid id, [FromBody] CheckinRequest body, CancellationToken ct)
+    public async Task<IActionResult> Checkin(Guid id, [FromBody] CheckinRequest req, CancellationToken ct = default)
     {
-        try
+        if (!ModelState.IsValid)
+            return ValidationProblem(ModelState);
+
+        var rec = await _db.Query<Recibo>().FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (rec is null) return NotFound();
+
+        // Concurrency (If-Match) → 412 si no coincide
+        var ifMatch = Request.Headers.IfMatch.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(ifMatch))
         {
-            var dto = await _svc.CheckinAsync(id, body?.Gps, body?.Comentario, ct);
-            return Ok(dto);
+            var currentEtag = ComputeReciboEtag(rec);
+            if (!string.Equals(ifMatch, currentEtag, StringComparison.Ordinal))
+                return this.PreconditionFailedProblem("recibos/etag", "Precondición fallida",
+                    "If-Match no coincide con la versión actual del recibo.");
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("no encontrado", StringComparison.OrdinalIgnoreCase))
+
+        // Idempotencia
+        if (!string.IsNullOrWhiteSpace(rec.IdempotencyKey) &&
+            string.Equals(rec.IdempotencyKey, req.IdempotencyKey, StringComparison.Ordinal))
         {
-            return NotFound();
+            Response.Headers.ETag = ComputeReciboEtag(rec);
+            return Ok(new { id = rec.Id, estado = (int)rec.Estado, idempotent = true });
         }
-        catch (InvalidOperationException ex) when (ex.Message.Contains("Transición inválida", StringComparison.OrdinalIgnoreCase))
+        if (!string.IsNullOrWhiteSpace(rec.IdempotencyKey) &&
+            !string.Equals(rec.IdempotencyKey, req.IdempotencyKey, StringComparison.Ordinal))
         {
-            return BadRequest(ex.Message);
+            return this.ConflictProblem("recibos/idempotencia", "Operación ya ejecutada",
+                "El recibo ya fue procesado con otra IdempotencyKey.");
         }
+
+        // Reglas de estado (rec.Estado es byte)
+        if (rec.Estado == (byte)ReciboEstado.EnTransito_Planta)
+        {
+            rec.Estado = (byte)ReciboEstado.EnPatioPlanta; // llegada a planta
+        }
+        else if (rec.Estado == (byte)ReciboEstado.EnTransito_Cliente)
+        {
+            return this.ConflictProblem("recibos/destino-cliente", "Flujo no permitido",
+                "Check-in solo aplica a recibos con destino Planta (EnTransito_Planta).");
+        }
+        else
+        {
+            return this.ConflictProblem("recibos/estado-invalido", "Estado inválido",
+                "Solo se permite check-in desde estados EnTransito_*.");
+        }
+
+        // Observaciones e idempotencia
+        if (!string.IsNullOrWhiteSpace(req.Observaciones))
+        {
+            rec.Observaciones = string.IsNullOrWhiteSpace(rec.Observaciones)
+                ? req.Observaciones
+                : $"{rec.Observaciones} | {req.Observaciones}";
+        }
+        rec.IdempotencyKey = req.IdempotencyKey;
+        rec.UltimaActualizacion = DateTimeOffset.UtcNow;
+
+        await ((IPlantaDbContext)_db).SaveChangesAsync(ct);
+
+        Response.Headers.ETag = ComputeReciboEtag(rec);
+        return Ok(new { id = rec.Id, estado = (int)rec.Estado, updated = true });
+    }
+
+    // ==========================
+    // ====== HELPERS PRIV ======
+    // ==========================
+
+    private static IQueryable<Recibo> ApplyFilters(
+        IQueryable<Recibo> q,
+        int? empresaId, int? vehiculoId, int? clienteId, int? materialId,
+        DateTimeOffset? desde, DateTimeOffset? hasta, string? qtext)
+    {
+        if (empresaId.HasValue) q = q.Where(r => r.EmpresaId == empresaId.Value);
+        if (vehiculoId.HasValue) q = q.Where(r => r.VehiculoId == vehiculoId.Value);
+        if (clienteId.HasValue) q = q.Where(r => r.ClienteId == clienteId.Value);
+        if (materialId.HasValue) q = q.Where(r => r.MaterialId == materialId.Value);
+        if (desde.HasValue) q = q.Where(r => r.FechaCreacion >= desde.Value);
+        if (hasta.HasValue) q = q.Where(r => r.FechaCreacion <= hasta.Value);
+        if (!string.IsNullOrWhiteSpace(qtext))
+            q = q.Where(r =>
+                (r.PlacaSnapshot ?? string.Empty).Contains(qtext) ||
+                (r.Observaciones ?? string.Empty).Contains(qtext));
+        return q;
+    }
+
+    private static string ComputeReciboEtag(Recibo r)
+    {
+        long last = r.UltimaActualizacion.HasValue
+            ? r.UltimaActualizacion.Value.ToUnixTimeSeconds()
+            : 0L;
+        int estado = (int)r.Estado; // r.Estado es byte; lo exponemos como int
+        return $"W/\"{r.Id:N}-{last}-{estado}\"";
+    }
+
+    private async Task<string> ComputeGridEtagAsync(
+        int? empresaId, int? vehiculoId, int? clienteId, int? materialId,
+        DateTimeOffset? desde, DateTimeOffset? hasta, string? q,
+        int page, int pageSize, CancellationToken ct)
+    {
+        var key = $"recibos-grid:v1:empresa={empresaId};veh={vehiculoId};cli={clienteId};mat={materialId};" +
+                  $"desde={desde?.ToUnixTimeSeconds()};hasta={hasta?.ToUnixTimeSeconds()};q={q};" +
+                  $"page={page};size={pageSize}";
+
+        if (_cache.TryGetValue<string>(key, out var etagCached) && etagCached is not null)
+            return etagCached;
+
+        var baseQ = ApplyFilters(_db.Query<Recibo>(), empresaId, vehiculoId, clienteId, materialId, desde, hasta, q);
+
+        var sig = await baseQ
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Count = g.Count(),
+                MaxCon = g.Max(x => (int?)x.Consecutivo) ?? 0,
+                MaxUpd = g.Max(x => (DateTimeOffset?)x.UltimaActualizacion) ?? DateTimeOffset.MinValue
+            })
+            .FirstOrDefaultAsync(ct);
+
+        var etag = $"W/\"{sig?.Count ?? 0}-{sig?.MaxCon ?? 0}-{(sig?.MaxUpd ?? DateTimeOffset.MinValue).ToUnixTimeSeconds()}\"";
+
+        _cache.Set(key, etag, new MemoryCacheEntryOptions
+        {
+            AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(60)
+        });
+
+        return etag;
     }
 }
