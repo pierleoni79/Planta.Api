@@ -1,25 +1,34 @@
-# Planta — Ecosistema de Inventario y Operaciones
+<!-- Ruta: /README.md | V4.0 (Paso D en curso) -->
 
-Solución multi-módulo (.NET) para recepción de material, procesos de planta, catálogos, stock y trazabilidad. Incluye API, lógica de aplicación, dominios, reportes y cliente móvil (MAUI).
+# Planta.Api
+
+API .NET para operación de Planta (recepción, catálogos, procesos y stock).  
+**Estado del proyecto**:  
+- ✅ Módulo A — Integridad & Rendimiento DB (completado)  
+- ✅ Módulo B — Catálogos + Cache/ETag (completado)  
+- ✅ Módulo C — Recibos (App + API) (completado)  
+- 🚧 Módulo D — Proceso de Trituración (en curso)  
+- ⏭ Módulo E — Stock & Trazabilidad (próximo)
+
+---
 
 ## Requisitos
-- .NET SDK 8.0.x
-- SQL Server (local o remoto)
-- (Opcional) Visual Studio 2022 / VS Code
 
-## Estructura (alto nivel)
-- `Planta.Api` — API ASP.NET Core (Swagger, endpoints de negocio)
-- `Planta.Application` — Casos de uso (MediatR, validaciones)
-- `Planta.Domain` — Entidades y reglas de dominio
-- `Planta.Infrastructure` — Persistencia / servicios externos
-- `Planta.Contracts` — DTOs y contratos
-- `Planta.Data` — Inicialización/seed/scripts utilitarios
-- `Planta.Mobile` — Cliente MAUI
-- `Planta.Reportes.*` — Generación de reportes
+- **.NET 8 SDK**
+- **SQL Server** (Developer/Express/Container)
+- PowerShell/Bash para ejecutar scripts
+- (Opcional) Postman/Insomnia/cURL para llamadas de verificación
 
-## Compilar y ejecutar (local)
-```bash
-dotnet --version
-dotnet restore ./Planta.Api.sln
-dotnet build   ./Planta.Api.sln -c Release
-dotnet run --project ./Planta.Api/Planta.Api.csproj
+---
+
+## Configuración
+
+1) **Cadena de conexión (Dev)**  
+   En `Planta.Api/appsettings.Development.json` define `ConnectionStrings.Default`.  
+   Ejemplo:
+   ```json
+   {
+     "ConnectionStrings": {
+       "Default": "Server=localhost,1433;Database=PlantaDb;User Id=sa;Password=<tuPass>;TrustServerCertificate=true"
+     }
+   }
