@@ -1,9 +1,11 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿// Ruta: /Planta.Data.Context/PlantaDbContext.cs | V1.4
+using Microsoft.EntityFrameworkCore;
+using Planta.Application.Abstractions;   // 👈 referencia necesaria
 using Planta.Data.Entities;
 
 namespace Planta.Data.Context;
 
-public class PlantaDbContext : DbContext
+public sealed class PlantaDbContext : DbContext, IPlantaDbContext
 {
     public PlantaDbContext(DbContextOptions<PlantaDbContext> options) : base(options) { }
 

@@ -1,4 +1,4 @@
-﻿// Ruta: /Planta.Api/Program.cs | V1.16
+﻿// Ruta: /Planta.Api/Program.cs | V1.17
 using System;
 using System.Linq;
 using System.Text.Json;
@@ -19,7 +19,7 @@ using Planta.Application;                 // AssemblyMarker (scan MediatR/Fluent
 using Planta.Application.Abstractions;    // IPlantaDbContext
 using Planta.Data.Context;                // DbContexts reales (PlantaDbContext / TransporteReadDbContext)
 using Planta.Infrastructure.Options;
-using Planta.Infrastructure.Persistence;  // ✅ Adapter: PlantaDbContextAdapter
+// using Planta.Infrastructure.Persistence;  // ❌ No existe en tu solución, se elimina
 // Repos/Servicios
 using Planta.Infrastructure.Repositories;
 using Planta.Infrastructure.Services;
@@ -51,8 +51,9 @@ builder.Services.AddDbContextFactory<TransporteReadDbContext>(options =>
 });
 
 // ✅ Bridge para handlers MediatR que dependen de IPlantaDbContext
+//    Requiere que PlantaDbContext implemente IPlantaDbContext
 builder.Services.AddScoped<IPlantaDbContext>(sp =>
-    new PlantaDbContextAdapter(sp.GetRequiredService<PlantaDbContext>()));
+    sp.GetRequiredService<PlantaDbContext>());
 
 // 3) MediatR + FluentValidation (escanea Planta.Application)
 builder.Services.AddMediatR(cfg =>

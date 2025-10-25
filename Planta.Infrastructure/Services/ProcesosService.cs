@@ -1,12 +1,13 @@
-﻿// Ruta: /Planta.Infrastructure/Services/ProcesosService.cs | V1.0
-using MediatR;
-using Planta.Application.Abstractions;
-using Planta.Application.Features.Procesos.Trituracion.Procesar; // Command
-using Planta.Contracts.Procesos;
+﻿// Ruta: /Planta.Infrastructure/Services/ProcesosService.cs | V1.2
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using static Microsoft.EntityFrameworkCore.DbLoggerCategory.Database;
+using MediatR;
+using Planta.Application.Abstractions;
+using Planta.Contracts.Procesos;
+
+// 👇 Alias correcto a la feature según Planta.Application
+using RegistrarCmd = Planta.Application.Features.Procesos.RegistrarTrituracion.Command;
 
 namespace Planta.Infrastructure.Services
 {
@@ -16,6 +17,6 @@ namespace Planta.Infrastructure.Services
         public ProcesosService(IMediator mediator) => _mediator = mediator;
 
         public Task<ProcesoResultDto> ProcesarTrituracionAsync(Guid reciboId, ProcesarTrituracionRequest body, CancellationToken ct)
-            => _mediator.Send(new Command(reciboId, body), ct);
+            => _mediator.Send(new RegistrarCmd(reciboId, body), ct);
     }
 }
