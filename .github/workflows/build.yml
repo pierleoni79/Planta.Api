@@ -1,0 +1,16 @@
+# Ruta: /.github/workflows/build.yml | V1.0
+name: Build (.NET)
+on:
+  push: { branches: [ master ] }
+  pull_request: { branches: [ master ] }
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet restore ./Planta.Api.sln
+      - run: dotnet build ./Planta.Api.sln -c Release --no-restore
