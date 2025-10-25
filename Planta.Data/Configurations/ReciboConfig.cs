@@ -1,7 +1,7 @@
 ﻿// Ruta: /Planta.Data/Configurations/ReciboConfig.cs | V2.1
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Planta.Data.Entities;          // ✅ entidad completa usada por Planta.Data.Context
+using Planta.Data.Entities;
 
 namespace Planta.Data.Configurations;
 
@@ -9,20 +9,20 @@ public sealed class ReciboConfig : IEntityTypeConfiguration<Recibo>
 {
     public void Configure(EntityTypeBuilder<Recibo> b)
     {
-        // Tabla real: op.Recibo
+        // Tabla real
         b.ToTable("Recibo", "op");
 
         b.HasKey(x => x.Id);
 
-        // Claves de negocio / restricciones
-        b.Property(x => x.EmpresaId).IsRequired();
-        b.Property(x => x.Consecutivo).IsRequired();
+        // Clave única (EmpresaId, Consecutivo)
         b.HasIndex(x => new { x.EmpresaId, x.Consecutivo }).IsUnique();
 
-        // Campos principales
+        // Requeridos / opcionales (idéntico al esquema)
+        b.Property(x => x.EmpresaId).IsRequired();
+        b.Property(x => x.Consecutivo).IsRequired();
         b.Property(x => x.FechaCreacion).IsRequired();
-        b.Property(x => x.Estado).IsRequired();          // tinyint
-        b.Property(x => x.DestinoTipo).IsRequired();     // tinyint
+        b.Property(x => x.Estado).IsRequired();
+        b.Property(x => x.DestinoTipo).IsRequired();
 
         b.Property(x => x.VehiculoId).IsRequired();
         b.Property(x => x.ConductorId).IsRequired(false);
@@ -32,8 +32,8 @@ public sealed class ReciboConfig : IEntityTypeConfiguration<Recibo>
 
         b.Property(x => x.ClienteId).IsRequired(false);
         b.Property(x => x.MaterialId).IsRequired();
-
         b.Property(x => x.Observaciones).HasMaxLength(1024);
+
         b.Property(x => x.UltimaActualizacion).IsRequired(false);
 
         b.Property(x => x.ReciboFisicoNumero).HasMaxLength(100);
@@ -45,14 +45,13 @@ public sealed class ReciboConfig : IEntityTypeConfiguration<Recibo>
         b.Property(x => x.AutoGeneradoEn).IsRequired(false);
         b.Property(x => x.Activo).IsRequired();
 
-        b.Property(x => x.Cantidad)
-            .HasPrecision(18, 3)
-            .IsRequired();
+        // 👇 evita el warning de truncamiento
+        b.Property(x => x.Cantidad).HasPrecision(18, 3).IsRequired();
 
-        // En tu diccionario, AlmacenOrigenId se usa siempre → Required
+        // En tu BD es NOT NULL, mantenlo requerido
         b.Property(x => x.AlmacenOrigenId).IsRequired();
 
-        // Índices de consulta comunes
+        // Búsquedas
         b.HasIndex(x => x.FechaCreacion);
         b.HasIndex(x => x.ClienteId);
         b.HasIndex(x => x.Estado);

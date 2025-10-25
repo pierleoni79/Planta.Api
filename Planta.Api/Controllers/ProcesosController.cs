@@ -1,25 +1,38 @@
-﻿// Ruta: /Planta.Api/Controllers/ProcesosController.cs | V1.0
-using MediatR;
+﻿// Ruta: /Planta.Api/Controllers/ProcesosController.cs | V1.1
+using System;
+using Planta.Application.Abstractions;     // IProcesosService
+using System.Threading;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Planta.Application.Features.Procesos.Trituracion.Procesar;
-using Planta.Contracts.Procesos;
+using Planta.Contracts.Procesos;          // ProcesarTrituracionRequest / ProcesoResultDto
 
 namespace Planta.Api.Controllers;
 
 [ApiController]
 [Route("api/procesos")]
+[Produces("application/json")]
+[Tags("Procesos")]
 public sealed class ProcesosController : ControllerBase
 {
-    private readonly IMediator _mediator;
-    public ProcesosController(IMediator mediator) => _mediator = mediator;
+    private readonly IProcesosService _svc;
+    public ProcesosController(IProcesosService svc) => _svc = svc;
 
     /// <summary>Procesa la trituración (Modo A: ε=1%, δ_min=0.1)</summary>
     [HttpPost("trituracion/{reciboId:guid}/procesar")]
-    [ProducesResponseType(typeof(ProcesoResultDto), 200)]
-    [ProducesResponseType(422)]
-    public async Task<IActionResult> Procesar(Guid reciboId, [FromBody] ProcesarTrituracionRequest body, CancellationToken ct)
+    [ProducesResponseType(typeof(ProcesoResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status422UnprocessableEntity)]
+    public async Task<IActionResult> Procesar([FromRoute] Guid reciboId, [FromBody] ProcesarTrituracionRequest body, CancellationToken ct)
     {
-        var dto = await _mediator.Send(new Command(reciboId, body), ct);
-        return dto.Cumple ? Ok(dto) : UnprocessableEntity(dto);
+        try
+        {
+            var dto = await _svc.ProcesarTrituracionAsync(reciboId, body, ct);
+            return dto.Cumple ? Ok(dto) : UnprocessableEntity(dto);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("no encontrado", StringComparison.OrdinalIgnoreCase))
+        {
+            return NotFound();
+        }
     }
 }

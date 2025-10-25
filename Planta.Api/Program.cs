@@ -1,4 +1,9 @@
-﻿// Ruta: /Planta.Api/Program.cs | V1.15
+﻿// Ruta: /Planta.Api/Program.cs | V1.16
+using System;
+using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 using FluentValidation;
 using MediatR;
 using Microsoft.AspNetCore.Builder;
@@ -11,17 +16,13 @@ using Microsoft.Extensions.Options;
 using Planta.Api.Health;
 using Planta.Api.Middlewares;
 using Planta.Application;                 // AssemblyMarker (scan MediatR/FluentValidation)
-using Planta.Application.Abstractions;
-using Planta.Data.Context;               // ✅ DbContexts reales (PlantaDbContext / TransporteReadDbContext)
+using Planta.Application.Abstractions;    // IPlantaDbContext
+using Planta.Data.Context;                // DbContexts reales (PlantaDbContext / TransporteReadDbContext)
 using Planta.Infrastructure.Options;
+using Planta.Infrastructure.Persistence;  // ✅ Adapter: PlantaDbContextAdapter
 // Repos/Servicios
 using Planta.Infrastructure.Repositories;
 using Planta.Infrastructure.Services;
-using System;
-using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,7 +37,6 @@ builder.Services.AddDbContext<PlantaDbContext>(options =>
     var conn = builder.Configuration.GetConnectionString("PlantaDb");
     if (string.IsNullOrWhiteSpace(conn))
         throw new InvalidOperationException("Falta ConnectionStrings:PlantaDb (usar User Secrets/Variables).");
-
     options.UseSqlServer(conn);
 });
 
@@ -46,13 +46,13 @@ builder.Services.AddDbContextFactory<TransporteReadDbContext>(options =>
     var conn = builder.Configuration.GetConnectionString("PlantaDb");
     if (string.IsNullOrWhiteSpace(conn))
         throw new InvalidOperationException("Falta ConnectionStrings:PlantaDb (usar User Secrets/Variables).");
-
     options.UseSqlServer(conn);
     options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 });
 
-// ❌ Quitar el bridge a IPlantaDbContext (no se usa en esta alineación)
-// builder.Services.AddScoped<IPlantaDbContext>(sp => sp.GetRequiredService<PlantaDbContext>());
+// ✅ Bridge para handlers MediatR que dependen de IPlantaDbContext
+builder.Services.AddScoped<IPlantaDbContext>(sp =>
+    new PlantaDbContextAdapter(sp.GetRequiredService<PlantaDbContext>()));
 
 // 3) MediatR + FluentValidation (escanea Planta.Application)
 builder.Services.AddMediatR(cfg =>

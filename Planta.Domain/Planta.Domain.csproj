@@ -9,5 +9,8 @@
 		<!-- Opcional: calidad -->
 		<!-- <TreatWarningsAsErrors>true</TreatWarningsAsErrors> -->
 	</PropertyGroup>
+	<ItemGroup>
+	  <Folder Include="Operaciones\" />
+	</ItemGroup>
 	<!-- Sin PackageReference: Domain no depende de EF/SQL -->
 </Project>

@@ -1,8 +1,4 @@
-﻿// Ruta: /Planta.Infrastructure/Services/RecibosService.cs | V1.9
-using System;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+﻿// Ruta: /Planta.Infrastructure/Services/RecibosService.cs | V1.10
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Planta.Application.Abstractions;
@@ -11,6 +7,10 @@ using Planta.Contracts.Recibos;
 using Planta.Data.Context;
 using Planta.Data.Entities;
 using Planta.Infrastructure.Options;
+using System;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Planta.Infrastructure.Services
 {
@@ -98,7 +98,6 @@ namespace Planta.Infrastructure.Services
             if (req.DestinoTipo == 2 && !req.ClienteId.HasValue)
                 throw new ArgumentException("ClienteId es obligatorio para destino ClienteDirecto.");
 
-            // Idempotencia: usa header o body
             var idem = string.IsNullOrWhiteSpace(idempotencyKeyHeader) ? req.IdempotencyKey : idempotencyKeyHeader;
             if (!string.IsNullOrWhiteSpace(idem))
             {
@@ -109,7 +108,6 @@ namespace Planta.Infrastructure.Services
                     return Map(existente);
             }
 
-            // ---------- Resolver snapshots con EF read-only ----------
             var (placa, resolvedConductorId, conductorNombre) =
                 await ResolverSnapshotsAsync(req.VehiculoId, req.ConductorId, ct);
 
@@ -130,7 +128,6 @@ namespace Planta.Infrastructure.Services
                 Activo = true,
                 Cantidad = req.Cantidad,
                 AlmacenOrigenId = req.AlmacenOrigenId,
-                // snapshots
                 PlacaSnapshot = placa,
                 ConductorNombreSnapshot = conductorNombre,
                 UsuarioCreador = string.IsNullOrWhiteSpace(usuario) ? "api" : usuario,
@@ -140,7 +137,6 @@ namespace Planta.Infrastructure.Services
             _db.Add(entity);
             await _db.SaveChangesAsync(ct);
 
-            // Autogenerar folio físico (si está habilitado)
             if (_opt.AutoGenerarFolioFisico && string.IsNullOrWhiteSpace(entity.ReciboFisicoNumero))
             {
                 var serie = string.IsNullOrWhiteSpace(_opt.SerieFolio) ? "RF" : _opt.SerieFolio!.Trim();
@@ -187,34 +183,62 @@ namespace Planta.Infrastructure.Services
             return Map(r);
         }
 
+        // ✅ NUEVO: Check-in (EnTransito_Planta → EnPatioPlanta) con log en op.ReciboEstadoLog
+        public async Task<ReciboDetailDto> CheckinAsync(Guid id, string? gps, string? comentario, CancellationToken ct)
+        {
+            var r = await _db.Set<Recibo>().FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (r is null) throw new InvalidOperationException("Recibo no encontrado.");
+
+            var actual = (ReciboEstado)r.Estado;
+            if (actual != ReciboEstado.EnTransito_Planta)
+                throw new InvalidOperationException($"Transición inválida: {actual} → {ReciboEstado.EnPatioPlanta}");
+
+            r.Estado = (byte)ReciboEstado.EnPatioPlanta;
+            r.UltimaActualizacion = DateTimeOffset.UtcNow;
+
+            if (!string.IsNullOrWhiteSpace(comentario))
+                r.Observaciones = string.IsNullOrWhiteSpace(r.Observaciones)
+                    ? comentario
+                    : $"{r.Observaciones} | {comentario}";
+
+            _db.Set<ReciboEstadoLog>().Add(new ReciboEstadoLog
+            {
+                ReciboId = r.Id,
+                Estado = (byte)ReciboEstado.EnPatioPlanta,
+                Cuando = DateTimeOffset.UtcNow,
+                Nota = comentario,
+                GPS = gps
+            });
+
+            await _db.SaveChangesAsync(ct);
+            return Map(r);
+        }
+
         // -------- Helpers --------
         private async Task<(string? placa, int? conductorId, string? conductorNombre)>
             ResolverSnapshotsAsync(int vehiculoId, int? conductorIdRequest, CancellationToken ct)
         {
             await using var ro = await _roFactory.CreateDbContextAsync(ct);
 
-            // Placa del vehículo
             var placa = await ro.Vehiculos
                 .AsNoTracking()
                 .Where(v => v.Id == vehiculoId)
                 .Select(v => v.Placa)
                 .FirstOrDefaultAsync(ct);
 
-            // Conductor (si no vino en el request): último registro (abierto primero)
             int? conductorId = conductorIdRequest;
             if (!conductorId.HasValue)
             {
                 conductorId = await ro.VehiculoConductorHist
                     .AsNoTracking()
                     .Where(h => h.VehiculoId == vehiculoId)
-                    .OrderByDescending(h => h.Hasta == null)  // abiertos primero
+                    .OrderByDescending(h => h.Hasta == null)
                     .ThenByDescending(h => h.Hasta)
                     .ThenByDescending(h => h.Desde)
                     .Select(h => (int?)h.ConductorId)
                     .FirstOrDefaultAsync(ct);
             }
 
-            // Nombre del conductor (si hay id)
             string? conductorNombre = null;
             if (conductorId.HasValue)
             {
@@ -243,7 +267,6 @@ namespace Planta.Infrastructure.Services
             MaterialId = r.MaterialId,
             AlmacenOrigenId = r.AlmacenOrigenId,
             Cantidad = r.Cantidad,
-            // op.Recibo no tiene "Unidad"
             Observaciones = r.Observaciones
         };
     }

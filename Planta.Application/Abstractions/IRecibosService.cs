@@ -1,4 +1,4 @@
-﻿// Ruta: /Planta.Application/Abstractions/IRecibosService.cs | V1.1
+﻿// Ruta: /Planta.Application/Abstractions/IRecibosService.cs | V1.2
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,4 +21,7 @@ public interface IRecibosService
     Task<ReciboDetailDto> CrearAsync(CrearReciboRequest req, string? idempotencyKeyHeader, string? usuario, CancellationToken ct);
 
     Task<ReciboDetailDto> CambiarEstadoAsync(Guid id, ReciboEstado nuevo, string? comentario, CancellationToken ct);
+
+    /// <summary>Marca check-in en planta: EnTransito_Planta → EnPatioPlanta y registra GPS/nota en op.ReciboEstadoLog.</summary>
+    Task<ReciboDetailDto> CheckinAsync(Guid id, string? gps, string? comentario, CancellationToken ct);
 }

@@ -1,16 +1,14 @@
-﻿// Ruta: /Planta.Api/Controllers/RecibosController.cs | V1.4
+﻿// Ruta: /Planta.Api/Controllers/RecibosController.cs | V1.5
 using System;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Planta.Application.Abstractions;
-using Planta.Application.Features.Recibos.Checkin;
 using Planta.Contracts.Common;
 using Planta.Contracts.Recibos;
 
@@ -23,13 +21,8 @@ namespace Planta.Api.Controllers;
 public sealed class RecibosController : ControllerBase
 {
     private readonly IRecibosService _svc;
-    private readonly IMediator _mediator;
 
-    public RecibosController(IRecibosService svc, IMediator mediator)
-    {
-        _svc = svc;
-        _mediator = mediator;
-    }
+    public RecibosController(IRecibosService svc) => _svc = svc;
 
     // -------- Helpers comunes (alineados con CatalogosController) --------
     private static void NormalizePage(ref int page, ref int pageSize)
@@ -91,8 +84,6 @@ public sealed class RecibosController : ControllerBase
         CancellationToken ct = default)
     {
         NormalizePage(ref page, ref pageSize);
-
-        // ✅ PagedRequest usa 'Q'
         var req = new PagedRequest { Page = page, PageSize = pageSize, Q = search };
 
         var result = await _svc.ListarAsync(req, empresaId, estado, clienteId, desde, hasta, search, ct);
@@ -163,11 +154,23 @@ public sealed class RecibosController : ControllerBase
 
     /// <summary>📍 Check-in en planta (EnTransito_Planta ⇒ EnPatioPlanta). Guarda GPS/nota.</summary>
     [HttpPost("{id:guid}/checkin")]
-    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(typeof(ReciboDetailDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Checkin([FromRoute] Guid id, [FromBody] CheckinRequest body, CancellationToken ct)
     {
-        await _mediator.Send(new Command(id, body), ct);
-        return NoContent();
+        try
+        {
+            var dto = await _svc.CheckinAsync(id, body?.Gps, body?.Comentario, ct);
+            return Ok(dto);
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("no encontrado", StringComparison.OrdinalIgnoreCase))
+        {
+            return NotFound();
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("Transición inválida", StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest(ex.Message);
+        }
     }
 }

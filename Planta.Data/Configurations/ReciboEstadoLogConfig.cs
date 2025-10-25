@@ -1,10 +1,6 @@
-﻿// Ruta: /Planta.Data/Configurations/ReciboEstadoLogConfig.cs | V2.2
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-// ✅ Usa la entidad REAL de datos.
-// Si tu clase está en otro namespace, deja AMBOS usings y el compilador tomará el correcto.
-using Planta.Data.Entities;
-using Planta.Domain.Operaciones;
+using Planta.Data.Entities;   // ✅ usar la entidad real
 
 namespace Planta.Data.Configurations;
 
@@ -16,20 +12,18 @@ public sealed class ReciboEstadoLogConfig : IEntityTypeConfiguration<ReciboEstad
         b.ToTable("ReciboEstadoLog", "op");
 
         b.HasKey(x => x.Id);
-        b.Property(x => x.Id).ValueGeneratedOnAdd();                 // bigint IDENTITY
+        b.Property(x => x.Id).ValueGeneratedOnAdd();          // bigint IDENTITY
 
-        b.Property(x => x.ReciboId).IsRequired();                    // uniqueidentifier
-        b.Property(x => x.Estado).HasColumnType("tinyint").IsRequired();
-
+        b.Property(x => x.ReciboId).IsRequired();             // uniqueidentifier
+        b.Property(x => x.Estado).IsRequired();               // byte -> tinyint
         b.Property(x => x.Cuando)
-            .HasColumnType("datetimeoffset")
-            .HasDefaultValueSql("sysdatetimeoffset()");
+            .HasDefaultValueSql("sysdatetimeoffset()");       // datetimeoffset
 
         b.Property(x => x.Nota).HasMaxLength(512);
         b.Property(x => x.GPS).HasMaxLength(128);
 
-        // Índices
-        b.HasIndex(x => x.ReciboId);
-        b.HasIndex(x => new { x.ReciboId, x.Cuando });
+        // Índice útil para consultas por recibo y orden por fecha
+        b.HasIndex(x => new { x.ReciboId, x.Cuando })
+         .HasDatabaseName("IX_ReciboEstadoLog_Recibo_Cuando");
     }
 }
