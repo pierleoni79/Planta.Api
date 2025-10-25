@@ -1,19 +1,17 @@
-﻿// Ruta: /Planta.Application/Abstractions/IPlantaDbContext.cs | V1.1
+﻿// Ruta: /Planta.Application/Abstractions/IPlantaDbContext.cs | V1.2
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
-using Planta.Domain.Produccion;
 
-namespace Planta.Application.Abstractions;
-
-public interface IPlantaDbContext
+namespace Planta.Application.Abstractions
 {
-    // Acceso genérico (útil para otros módulos: check-in, catálogos, etc.)
-    DbSet<T> Set<T>() where T : class;
-
-    // Módulo D — Trituración
-    DbSet<ProcesoTrituracion> ProcesosTrituracion { get; }
-    DbSet<ProcesoTrituracionSalida> ProcesosTrituracionSalidas { get; }
-
-    Task<int> SaveChangesAsync(CancellationToken ct = default);
+    /// Abstracción liviana para consumir DbContext desde Application sin acoplar EF.
+    public interface IPlantaDbContext
+    {
+        IQueryable<T> Query<T>() where T : class;
+        Task AddAsync<T>(T entity, CancellationToken cancellationToken = default) where T : class;
+        void Update<T>(T entity) where T : class;
+        void Remove<T>(T entity) where T : class;
+        Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+    }
 }

@@ -53,7 +53,11 @@ builder.Services.AddDbContextFactory<TransporteReadDbContext>(options =>
 // ✅ Bridge para handlers MediatR que dependen de IPlantaDbContext
 //    Requiere que PlantaDbContext implemente IPlantaDbContext
 builder.Services.AddScoped<IPlantaDbContext>(sp =>
-    sp.GetRequiredService<PlantaDbContext>());
+{
+    var db = sp.GetRequiredService<PlantaDbContext>();
+    if (db is IPlantaDbContext ctx) return ctx;
+    throw new InvalidOperationException("PlantaDbContext must implement IPlantaDbContext. Añade ': IPlantaDbContext' a la clase PlantaDbContext o ajusta la interfaz.");
+});
 
 // 3) MediatR + FluentValidation (escanea Planta.Application)
 builder.Services.AddMediatR(cfg =>
