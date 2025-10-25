@@ -1,0 +1,160 @@
+# Ruta: /tests/recibos.vs.http | V1.3
+# Archivo para Visual Studio 2022 (sin JSONPath).
+# 1) Ejecuta "CreatePlanta".
+# 2) Copia el "id" devuelto y pégalo en @reciboId.
+# 3) Ejecuta el resto.
+
+@baseUrl = https://localhost:7261
+@json = application/json
+
+# Variables (ajusta el puerto; pega aquí Ids y reintenta)
+@reciboId = PON_AQUI_EL_ID_DEL_CREATE_PLANTA
+@reciboIdInvalid = PON_AQUI_EL_ID_DEL_CREATE_PLANTA_INVALID
+@idem1 = rec-plant-{{$timestamp}}
+@idemInvalid = rec-plant-invalid-{{$timestamp}}
+@idemCli = rec-cli-{{$timestamp}}
+
+###
+# @name CreatePlanta
+POST {{baseUrl}}/api/recibos
+Content-Type: {{json}}
+Accept: {{json}}
+Idempotency-Key: {{idem1}}
+
+{
+  "destinoTipo": 1,
+  "empresaId": 1,
+  "vehiculoId": 101,
+  "conductorId": 5,
+  "almacenOrigenId": 3,
+  "materialId": 1001,
+  "cantidad": 7.5,
+  "unidad": "M3",
+  "observaciones": "Smoke Planta"
+}
+
+###
+# @name CreatePlantaRepeat
+POST {{baseUrl}}/api/recibos
+Content-Type: {{json}}
+Accept: {{json}}
+Idempotency-Key: {{idem1}}
+
+{
+  "destinoTipo": 1,
+  "empresaId": 1,
+  "vehiculoId": 101,
+  "conductorId": 5,
+  "almacenOrigenId": 3,
+  "materialId": 1001,
+  "cantidad": 7.5,
+  "unidad": "M3",
+  "observaciones": "Smoke Planta reintento"
+}
+
+###
+# @name GridTransitoPlanta
+GET {{baseUrl}}/api/recibos/grid?page=1&pageSize=20&estado=10
+Accept: {{json}}
+
+###
+# @name GetPlanta
+GET {{baseUrl}}/api/recibos/{{reciboId}}
+Accept: {{json}}
+
+###
+# @name Estado20
+PUT {{baseUrl}}/api/recibos/{{reciboId}}/estado
+Content-Type: {{json}}
+Accept: {{json}}
+
+{
+  "nuevoEstado": 20,
+  "comentario": "checkin planta"
+}
+
+###
+# @name Estado30
+PUT {{baseUrl}}/api/recibos/{{reciboId}}/estado
+Content-Type: {{json}}
+Accept: {{json}}
+
+{
+  "nuevoEstado": 30,
+  "comentario": "iniciar descarga"
+}
+
+###
+# @name Estado40
+PUT {{baseUrl}}/api/recibos/{{reciboId}}/estado
+Content-Type: {{json}}
+Accept: {{json}}
+
+{
+  "nuevoEstado": 40,
+  "comentario": "fin descarga/procesado"
+}
+
+###
+# @name Estado90
+PUT {{baseUrl}}/api/recibos/{{reciboId}}/estado
+Content-Type: {{json}}
+Accept: {{json}}
+
+{
+  "nuevoEstado": 90,
+  "comentario": "cerrado"
+}
+
+###
+# @name CreatePlantaInvalid
+POST {{baseUrl}}/api/recibos
+Content-Type: {{json}}
+Accept: {{json}}
+Idempotency-Key: {{idemInvalid}}
+
+{
+  "destinoTipo": 1,
+  "empresaId": 1,
+  "vehiculoId": 103,
+  "almacenOrigenId": 3,
+  "materialId": 1001,
+  "cantidad": 4,
+  "unidad": "M3",
+  "observaciones": "Caso invalido"
+}
+
+###
+# @name Estado30Invalid
+PUT {{baseUrl}}/api/recibos/{{reciboIdInvalid}}/estado
+Content-Type: {{json}}
+Accept: {{json}}
+
+{
+  "nuevoEstado": 30,
+  "comentario": "salto invalido"
+}
+
+###
+# @name CreateClienteDirecto
+POST {{baseUrl}}/api/recibos
+Content-Type: {{json}}
+Accept: {{json}}
+Idempotency-Key: {{idemCli}}
+
+{
+  "destinoTipo": 2,
+  "empresaId": 1,
+  "clienteId": 2001,
+  "vehiculoId": 104,
+  "almacenOrigenId": 3,
+  "materialId": 1001,
+  "cantidad": 5,
+  "unidad": "M3",
+  "observaciones": "Cliente directo"
+}
+
+###
+# @name GridTransitoCliente
+GET {{baseUrl}}/api/recibos/grid?page=1&pageSize=20&estado=12
+Accept: {{json}}

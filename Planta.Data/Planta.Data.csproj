@@ -1,0 +1,24 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- Ruta: /Planta.Data/Planta.Data.csproj | V1.1 -->
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<!-- EF Core base (DbContext, ModelBuilder, etc.) -->
+		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.21" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.21" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.21" />
+		<!-- Si harás migraciones desde este proyecto, agrega también (opcional): -->
+		<!-- <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.*" PrivateAssets="All" /> -->
+	</ItemGroup>
+
+	<ItemGroup>
+		<!-- Data depende de Domain para las entidades -->
+		<ProjectReference Include="..\Planta.Domain\Planta.Domain.csproj" />
+	</ItemGroup>
+</Project>

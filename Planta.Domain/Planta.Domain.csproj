@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- Ruta: /Planta.Domain/Planta.Domain.csproj | V1.0 -->
+<Project Sdk="Microsoft.NET.Sdk">
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
+		<!-- Opcional: calidad -->
+		<!-- <TreatWarningsAsErrors>true</TreatWarningsAsErrors> -->
+	</PropertyGroup>
+	<!-- Sin PackageReference: Domain no depende de EF/SQL -->
+</Project>

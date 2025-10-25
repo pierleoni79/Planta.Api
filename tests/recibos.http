@@ -1,0 +1,168 @@
+
+// Ruta: /tests/recibos.http | V1.1
+
+@baseUrl = https://localhost:7261
+@json = application/json
+
+# Variables de idempotencia
+@idem1 = rec-plant-{{$timestamp}}
+@idemInvalid = rec-plant-invalid-{{$timestamp}}
+@idemCli = rec-cli-{{$timestamp}}
+
+###
+# Crear Recibo → Destino Planta (Estado inicial 10) con Idempotency-Key
+# @name Create_Planta
+POST {{baseUrl}}/api/recibos
+Content-Type: {{json}}
+Accept: {{json}}
+Idempotency-Key: {{idem1}}
+
+{
+  "destinoTipo": 1,
+  "empresaId": 1,
+  "vehiculoId": 101,
+  "conductorId": 5,
+  "almacenOrigenId": 3,
+  "materialId": 1001,
+  "cantidad": 7.5,
+  "unidad": "M3",
+  "observaciones": "Smoke Planta"
+}
+
+###
+# Crear Recibo → Idempotente (mismo Idempotency-Key). Debe devolver el MISMO Id/Consecutivo
+# @name Create_Planta_Repeat
+POST {{baseUrl}}/api/recibos
+Content-Type: {{json}}
+Accept: {{json}}
+Idempotency-Key: {{idem1}}
+
+{
+  "destinoTipo": 1,
+  "empresaId": 1,
+  "vehiculoId": 101,
+  "conductorId": 5,
+  "almacenOrigenId": 3,
+  "materialId": 1001,
+  "cantidad": 7.5,
+  "unidad": "M3",
+  "observaciones": "Smoke Planta (reintento)"
+}
+
+###
+# Grid filtrando por estado=10 (EnTransito_Planta)
+# @name Grid_TransitoPlanta
+GET {{baseUrl}}/api/recibos/grid?page=1&pageSize=20&estado=10
+Accept: {{json}}
+
+###
+# Detalle del Recibo creado (usa el Id de Create_Planta)
+# REST Client / Rider soportan JSONPath con $.id
+# @name Get_Planta
+GET {{baseUrl}}/api/recibos/{{Create_Planta.response.body.$.id}}
+Accept: {{json}}
+
+###
+# Cambiar a 20 (EnPatioPlanta)
+# @name Estado_20
+PUT {{baseUrl}}/api/recibos/{{Create_Planta.response.body.$.id}}/estado
+Content-Type: {{json}}
+Accept: {{json}}
+
+{
+  "nuevoEstado": 20,
+  "comentario": "checkin planta"
+}
+
+###
+# Cambiar a 30 (Descargando)
+# @name Estado_30
+PUT {{baseUrl}}/api/recibos/{{Create_Planta.response.body.$.id}}/estado
+Content-Type: {{json}}
+Accept: {{json}}
+
+{
+  "nuevoEstado": 30,
+  "comentario": "iniciar descarga"
+}
+
+###
+# Cambiar a 40 (Procesado)
+# @name Estado_40
+PUT {{baseUrl}}/api/recibos/{{Create_Planta.response.body.$.id}}/estado
+Content-Type: {{json}}
+Accept: {{json}}
+
+{
+  "nuevoEstado": 40,
+  "comentario": "fin descarga/procesado"
+}
+
+###
+# Cambiar a 90 (Cerrado)
+# @name Estado_90
+PUT {{baseUrl}}/api/recibos/{{Create_Planta.response.body.$.id}}/estado
+Content-Type: {{json}}
+Accept: {{json}}
+
+{
+  "nuevoEstado": 90,
+  "comentario": "cerrado"
+}
+
+###
+# Transición inválida: 10 -> 30 (debe dar 400). Creamos otro para esta prueba
+# @name Create_Planta_Invalid
+POST {{baseUrl}}/api/recibos
+Content-Type: {{json}}
+Accept: {{json}}
+Idempotency-Key: {{idemInvalid}}
+
+{
+  "destinoTipo": 1,
+  "empresaId": 1,
+  "vehiculoId": 103,
+  "almacenOrigenId": 3,
+  "materialId": 1001,
+  "cantidad": 4,
+  "unidad": "M3",
+  "observaciones": "Caso inválido"
+}
+
+###
+# Intento de salto 10 → 30 (espera 400 y mensaje 'Transición inválida')
+# @name Estado_30_Invalid
+PUT {{baseUrl}}/api/recibos/{{Create_Planta_Invalid.response.body.$.id}}/estado
+Content-Type: {{json}}
+Accept: {{json}}
+
+{
+  "nuevoEstado": 30,
+  "comentario": "salto inválido"
+}
+
+###
+# Crear Recibo → Cliente Directo (Estado inicial 12)
+# @name Create_ClienteDirecto
+POST {{baseUrl}}/api/recibos
+Content-Type: {{json}}
+Accept: {{json}}
+Idempotency-Key: {{idemCli}}
+
+{
+  "destinoTipo": 2,
+  "empresaId": 1,
+  "clienteId": 2001,
+  "vehiculoId": 104,
+  "almacenOrigenId": 3,
+  "materialId": 1001,
+  "cantidad": 5,
+  "unidad": "M3",
+  "observaciones": "Cliente directo"
+}
+
+###
+# Grid filtrando por estado=12 (EnTransito_Cliente)
+# @name Grid_TransitoCliente
+GET {{baseUrl}}/api/recibos/grid?page=1&pageSize=20&estado=12
+Accept: {{json}}
