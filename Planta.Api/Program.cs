@@ -1,9 +1,6 @@
-﻿// Ruta: /Planta.Api/Program.cs | V1.13
-using System;
-using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Threading.Tasks;
+﻿// Ruta: /Planta.Api/Program.cs | V1.15
+using FluentValidation;
+using MediatR;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Http;
@@ -13,25 +10,27 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Planta.Api.Health;
 using Planta.Api.Middlewares;
-using Planta.Data.Context;                 // DbContexts actuales
+using Planta.Application;                 // AssemblyMarker (scan MediatR/FluentValidation)
+using Planta.Application.Abstractions;
+using Planta.Data.Context;               // ✅ DbContexts reales (PlantaDbContext / TransporteReadDbContext)
 using Planta.Infrastructure.Options;
-
-// DI de repos/servicios
-using Planta.Application.Abstractions;     // IPlantaDbContext (para Mod. D)
+// Repos/Servicios
 using Planta.Infrastructure.Repositories;
 using Planta.Infrastructure.Services;
+using System;
+using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // 1) Opciones (desde configuración segura)
-builder.Services.Configure<ConnectionStringsOptions>(
-    builder.Configuration.GetSection("ConnectionStrings"));
-builder.Services.Configure<StartupOptions>(
-    builder.Configuration.GetSection("Startup"));
-builder.Services.Configure<RecibosOptions>(
-    builder.Configuration.GetSection("Recibos"));
+builder.Services.Configure<ConnectionStringsOptions>(builder.Configuration.GetSection("ConnectionStrings"));
+builder.Services.Configure<StartupOptions>(builder.Configuration.GetSection("Startup"));
+builder.Services.Configure<RecibosOptions>(builder.Configuration.GetSection("Recibos"));
 
-// 2) DbContexts
+// 2) DbContexts (usar los de Planta.Data.Context)
 builder.Services.AddDbContext<PlantaDbContext>(options =>
 {
     var conn = builder.Configuration.GetConnectionString("PlantaDb");
@@ -41,7 +40,7 @@ builder.Services.AddDbContext<PlantaDbContext>(options =>
     options.UseSqlServer(conn);
 });
 
-// ➕ Factory de SOLO LECTURA para tablas tpt.* (Vehiculo/Conductor/Hist)
+// Factory de SOLO LECTURA (usada por RecibosService/Catálogos)
 builder.Services.AddDbContextFactory<TransporteReadDbContext>(options =>
 {
     var conn = builder.Configuration.GetConnectionString("PlantaDb");
@@ -52,24 +51,27 @@ builder.Services.AddDbContextFactory<TransporteReadDbContext>(options =>
     options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 });
 
-// ⚠️ Bridge a IPlantaDbContext (activo cuando PlantaDbContext implemente la interfaz)
-builder.Services.AddScoped<IPlantaDbContext>(sp => (IPlantaDbContext)sp.GetRequiredService<PlantaDbContext>());
+// ❌ Quitar el bridge a IPlantaDbContext (no se usa en esta alineación)
+// builder.Services.AddScoped<IPlantaDbContext>(sp => sp.GetRequiredService<PlantaDbContext>());
 
-// 3) Servicios de API
+// 3) MediatR + FluentValidation (escanea Planta.Application)
+builder.Services.AddMediatR(cfg =>
+    cfg.RegisterServicesFromAssembly(typeof(AssemblyMarker).Assembly));
+builder.Services.AddValidatorsFromAssembly(typeof(AssemblyMarker).Assembly);
+
+// 4) Servicios de API
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddControllers()
-    .AddJsonOptions(o =>
-    {
-        // Evita errores por referencias cíclicas típicas de EF (p. ej., navegación inversa)
-        o.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-        o.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-        o.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-    });
+builder.Services.AddControllers().AddJsonOptions(o =>
+{
+    o.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+    o.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+    o.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+});
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-// 4) CORS simple (ajústalo a tu dominio)
+// 5) CORS simple (ajústalo a tu dominio)
 builder.Services.AddCors(opt =>
 {
     opt.AddPolicy("Default", p => p
@@ -78,15 +80,15 @@ builder.Services.AddCors(opt =>
         .AllowAnyMethod());
 });
 
-// 5) Health checks
+// 6) Health checks
 builder.Services.AddHealthChecks()
     .AddCheck<DbHealthCheck>("database");
 
-// 6) Repositorios / Servicios de aplicación
+// 7) Repositorios / Servicios de aplicación
 builder.Services.AddScoped<ICatalogoRepository, CatalogoRepository>();
-builder.Services.AddScoped<IRecibosService, RecibosService>(); // usa TransporteReadDbContextFactory internamente
+builder.Services.AddScoped<IRecibosService, RecibosService>(); // RecibosService depende de Planta.Data.Context.*
 
-// 7) Infra transversal
+// 8) Infra transversal
 builder.Services.AddMemoryCache();
 builder.Services.AddResponseCaching(o =>
 {
@@ -135,6 +137,7 @@ app.UseMiddleware<ErrorHandlingMiddleware>();
 
 app.UseAuthorization();
 
+// /healthz → JSON compacto { status, checks[] }
 static Task WriteHealth(HttpContext ctx, Microsoft.Extensions.Diagnostics.HealthChecks.HealthReport rpt)
 {
     ctx.Response.ContentType = "application/json; charset=utf-8";

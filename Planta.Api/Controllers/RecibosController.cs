@@ -1,14 +1,16 @@
-﻿// Ruta: /Planta.Api/Controllers/RecibosController.cs | V1.3
+﻿// Ruta: /Planta.Api/Controllers/RecibosController.cs | V1.4
 using System;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using MediatR;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Planta.Application.Abstractions;
+using Planta.Application.Features.Recibos.Checkin;
 using Planta.Contracts.Common;
 using Planta.Contracts.Recibos;
 
@@ -21,7 +23,13 @@ namespace Planta.Api.Controllers;
 public sealed class RecibosController : ControllerBase
 {
     private readonly IRecibosService _svc;
-    public RecibosController(IRecibosService svc) => _svc = svc;
+    private readonly IMediator _mediator;
+
+    public RecibosController(IRecibosService svc, IMediator mediator)
+    {
+        _svc = svc;
+        _mediator = mediator;
+    }
 
     // -------- Helpers comunes (alineados con CatalogosController) --------
     private static void NormalizePage(ref int page, ref int pageSize)
@@ -151,5 +159,15 @@ public sealed class RecibosController : ControllerBase
         {
             return BadRequest(ex.Message);
         }
+    }
+
+    /// <summary>📍 Check-in en planta (EnTransito_Planta ⇒ EnPatioPlanta). Guarda GPS/nota.</summary>
+    [HttpPost("{id:guid}/checkin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> Checkin([FromRoute] Guid id, [FromBody] CheckinRequest body, CancellationToken ct)
+    {
+        await _mediator.Send(new Command(id, body), ct);
+        return NoContent();
     }
 }
