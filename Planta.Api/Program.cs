@@ -1,4 +1,4 @@
-﻿// Ruta: /Planta.Api/Program.cs | V1.17
+﻿// Ruta: /Planta.Api/Program.cs | V1.18
 using System;
 using System.Linq;
 using System.Text.Json;
@@ -17,46 +17,57 @@ using Planta.Api.Health;
 using Planta.Api.Middlewares;
 using Planta.Application;                 // AssemblyMarker (scan MediatR/FluentValidation)
 using Planta.Application.Abstractions;    // IPlantaDbContext
-using Planta.Data.Context;                // DbContexts reales (PlantaDbContext / TransporteReadDbContext)
+using Planta.Data.Context;                // DbContexts reales
 using Planta.Infrastructure.Options;
-// using Planta.Infrastructure.Persistence;  // ❌ No existe en tu solución, se elimina
 // Repos/Servicios
 using Planta.Infrastructure.Repositories;
 using Planta.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1) Opciones (desde configuración segura)
+// 1) Opciones (desde configuración)
 builder.Services.Configure<ConnectionStringsOptions>(builder.Configuration.GetSection("ConnectionStrings"));
 builder.Services.Configure<StartupOptions>(builder.Configuration.GetSection("Startup"));
 builder.Services.Configure<RecibosOptions>(builder.Configuration.GetSection("Recibos"));
 
-// 2) DbContexts (usar los de Planta.Data.Context)
+// 2) DbContexts (PlantaDbContext principal)
 builder.Services.AddDbContext<PlantaDbContext>(options =>
 {
     var conn = builder.Configuration.GetConnectionString("PlantaDb");
     if (string.IsNullOrWhiteSpace(conn))
         throw new InvalidOperationException("Falta ConnectionStrings:PlantaDb (usar User Secrets/Variables).");
-    options.UseSqlServer(conn);
+
+    options.UseSqlServer(conn, sql =>
+    {
+        // Resiliencia de conexión (seguro para producción/dev)
+        sql.EnableRetryOnFailure(
+            maxRetryCount: 5,
+            maxRetryDelay: TimeSpan.FromSeconds(10),
+            errorNumbersToAdd: null);
+    });
 });
 
-// Factory de SOLO LECTURA (usada por RecibosService/Catálogos)
+// Factory de SOLO LECTURA (usada por servicios de catálogos/consultas)
 builder.Services.AddDbContextFactory<TransporteReadDbContext>(options =>
 {
     var conn = builder.Configuration.GetConnectionString("PlantaDb");
     if (string.IsNullOrWhiteSpace(conn))
         throw new InvalidOperationException("Falta ConnectionStrings:PlantaDb (usar User Secrets/Variables).");
-    options.UseSqlServer(conn);
+
+    options.UseSqlServer(conn, sql =>
+    {
+        sql.EnableRetryOnFailure(5, TimeSpan.FromSeconds(10), null);
+    });
     options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 });
 
 // ✅ Bridge para handlers MediatR que dependen de IPlantaDbContext
-//    Requiere que PlantaDbContext implemente IPlantaDbContext
+//    (Asegúrate de que PlantaDbContext implemente IPlantaDbContext)
 builder.Services.AddScoped<IPlantaDbContext>(sp =>
 {
     var db = sp.GetRequiredService<PlantaDbContext>();
     if (db is IPlantaDbContext ctx) return ctx;
-    throw new InvalidOperationException("PlantaDbContext must implement IPlantaDbContext. Añade ': IPlantaDbContext' a la clase PlantaDbContext o ajusta la interfaz.");
+    throw new InvalidOperationException("PlantaDbContext debe implementar IPlantaDbContext.");
 });
 
 // 3) MediatR + FluentValidation (escanea Planta.Application)
@@ -89,9 +100,9 @@ builder.Services.AddCors(opt =>
 builder.Services.AddHealthChecks()
     .AddCheck<DbHealthCheck>("database");
 
-// 7) Repositorios / Servicios de aplicación
+// 7) Repositorios / Servicios
 builder.Services.AddScoped<ICatalogoRepository, CatalogoRepository>();
-builder.Services.AddScoped<IRecibosService, RecibosService>(); // RecibosService depende de Planta.Data.Context.*
+builder.Services.AddScoped<IRecibosService, RecibosService>();
 
 // 8) Infra transversal
 builder.Services.AddMemoryCache();
@@ -132,17 +143,16 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-// IMPORTANTE: CORS antes que ResponseCaching
-app.UseCors("Default");
-app.UseResponseCaching();
-
-// Middlewares base
+// 🔁 Middlewares base ANTES de ResponseCaching para no perder headers en respuestas cacheadas
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<ErrorHandlingMiddleware>();
 
+// CORS y cacheo de respuestas
+app.UseCors("Default");
+app.UseResponseCaching();
+
 app.UseAuthorization();
 
-// /healthz → JSON compacto { status, checks[] }
 static Task WriteHealth(HttpContext ctx, Microsoft.Extensions.Diagnostics.HealthChecks.HealthReport rpt)
 {
     ctx.Response.ContentType = "application/json; charset=utf-8";
@@ -160,11 +170,7 @@ static Task WriteHealth(HttpContext ctx, Microsoft.Extensions.Diagnostics.Health
 }
 
 app.MapControllers();
-
-app.MapHealthChecks("/healthz", new HealthCheckOptions
-{
-    ResponseWriter = WriteHealth
-});
+app.MapHealthChecks("/healthz", new HealthCheckOptions { ResponseWriter = WriteHealth });
 
 app.Run();
 

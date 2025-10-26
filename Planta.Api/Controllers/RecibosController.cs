@@ -1,15 +1,15 @@
-﻿// Ruta: /Planta.Api/Controllers/RecibosController.cs | V2.8
+﻿// Ruta: /Planta.Api/Controllers/RecibosController.cs | V2.11
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Planta.Api.Common;
+using Planta.Contracts.Recibos;
+using Planta.Data.Entities;                      // Recibo, Proceso, ProcesoDet
 using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;                  // StatusCodes
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
-using Planta.Api.Common;                         // ProblemDetails helpers
-using Planta.Contracts.Recibos;                  // CheckinRequest + ReciboEstado (enum)
-using Planta.Data.Entities;                      // Recibo entity
 using IPlantaDbContext = Planta.Application.Abstractions.IPlantaDbContext;
 
 namespace Planta.Api.Controllers;
@@ -27,29 +27,19 @@ public sealed class RecibosController : ControllerBase
         _cache = cache;
     }
 
-    // ========================
-    // ======== GRID ==========
-    // ========================
-
+    // -------- GRID --------
     [HttpGet("grid")]
     [ResponseCache(Duration = 60, Location = ResponseCacheLocation.Any, NoStore = false)]
     public async Task<IActionResult> Grid(
-        int page = 1,
-        int pageSize = 20,
-        int? empresaId = null,
-        int? vehiculoId = null,
-        int? clienteId = null,
-        int? materialId = null,
-        DateTimeOffset? desde = null,
-        DateTimeOffset? hasta = null,
-        string? q = null,
+        int page = 1, int pageSize = 20,
+        int? empresaId = null, int? vehiculoId = null, int? clienteId = null, int? materialId = null,
+        DateTimeOffset? desde = null, DateTimeOffset? hasta = null, string? q = null,
         CancellationToken ct = default)
     {
         if (page < 1) page = 1;
         if (pageSize <= 0) pageSize = 20;
 
-        var etag = await ComputeGridEtagAsync(
-            empresaId, vehiculoId, clienteId, materialId, desde, hasta, q, page, pageSize, ct);
+        var etag = await ComputeGridEtagAsync(empresaId, vehiculoId, clienteId, materialId, desde, hasta, q, page, pageSize, ct);
 
         var inm = Request.Headers.IfNoneMatch.FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(inm) && string.Equals(inm, etag, StringComparison.Ordinal))
@@ -84,14 +74,10 @@ public sealed class RecibosController : ControllerBase
 
         Response.Headers.ETag = etag;
         Response.Headers.CacheControl = "public, max-age=60";
-
         return Ok(new { page, pageSize, total, items });
     }
 
-    // ==========================
-    // ======== DETALLE =========
-    // ==========================
-
+    // -------- DETALLE --------
     [HttpGet("{id:guid}")]
     [ResponseCache(Duration = 60, Location = ResponseCacheLocation.Any, NoStore = false)]
     public async Task<IActionResult> Obtener(Guid id, CancellationToken ct = default)
@@ -122,7 +108,7 @@ public sealed class RecibosController : ControllerBase
                 Placa = x.PlacaSnapshot,
                 x.ReciboFisicoNumero,
                 x.ReciboFisicoNumeroNorm,
-                x.UltimaActualizacion,          // DateTimeOffset?
+                x.UltimaActualizacion,
                 x.UsuarioCreador,
                 x.VehiculoId
             })
@@ -138,51 +124,34 @@ public sealed class RecibosController : ControllerBase
         return Ok(r);
     }
 
-    // ==========================
-    // ========= CHECKIN ========
-    // ==========================
-
-    /// <summary>
-    /// Check-in en planta: EnTransito_Planta → EnPatioPlanta. Idempotente por IdempotencyKey.
-    /// Valida If-Match (ETag) si el cliente lo envía.
-    /// </summary>
+    // ========= CHECKIN =========
     [HttpPost("{id:guid}/checkin")]
     public async Task<IActionResult> Checkin(Guid id, [FromBody] CheckinRequest req, CancellationToken ct = default)
     {
-        if (!ModelState.IsValid)
-            return ValidationProblem(ModelState);
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
 
         var rec = await _db.Query<Recibo>().FirstOrDefaultAsync(r => r.Id == id, ct);
         if (rec is null) return NotFound();
 
-        // Concurrency (If-Match) → 412 si no coincide
-        var ifMatch = Request.Headers.IfMatch.FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(ifMatch))
-        {
-            var currentEtag = ComputeReciboEtag(rec);
-            if (!string.Equals(ifMatch, currentEtag, StringComparison.Ordinal))
-                return this.PreconditionFailedProblem("recibos/etag", "Precondición fallida",
-                    "If-Match no coincide con la versión actual del recibo.");
-        }
-
-        // Idempotencia
-        if (!string.IsNullOrWhiteSpace(rec.IdempotencyKey) &&
-            string.Equals(rec.IdempotencyKey, req.IdempotencyKey, StringComparison.Ordinal))
+        // 1) Idempotencia (scope)
+        const string scope = "checkin";
+        if (IsSameScopeIdem(rec.IdempotencyKey, scope, req.IdempotencyKey))
         {
             Response.Headers.ETag = ComputeReciboEtag(rec);
             return Ok(new { id = rec.Id, estado = (int)rec.Estado, idempotent = true });
         }
-        if (!string.IsNullOrWhiteSpace(rec.IdempotencyKey) &&
-            !string.Equals(rec.IdempotencyKey, req.IdempotencyKey, StringComparison.Ordinal))
-        {
-            return this.ConflictProblem("recibos/idempotencia", "Operación ya ejecutada",
-                "El recibo ya fue procesado con otra IdempotencyKey.");
-        }
+        if (HasDifferentIdemSameScope(rec.IdempotencyKey, scope, req.IdempotencyKey))
+            return this.ConflictProblem("recibos/idempotencia", "Operación ya ejecutada", "Use la misma IdempotencyKey.");
 
-        // Reglas de estado (rec.Estado es byte)
+        // 2) If-Match (precondición)
+        var ifMatch = Request.Headers.IfMatch.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(ifMatch) && !string.Equals(ifMatch, ComputeReciboEtag(rec), StringComparison.Ordinal))
+            return this.PreconditionFailedProblem("recibos/etag", "Precondición fallida", "If-Match no coincide.");
+
+        // 3) Reglas de estado
         if (rec.Estado == (byte)ReciboEstado.EnTransito_Planta)
         {
-            rec.Estado = (byte)ReciboEstado.EnPatioPlanta; // llegada a planta
+            rec.Estado = (byte)ReciboEstado.EnPatioPlanta;
         }
         else if (rec.Estado == (byte)ReciboEstado.EnTransito_Cliente)
         {
@@ -195,28 +164,179 @@ public sealed class RecibosController : ControllerBase
                 "Solo se permite check-in desde estados EnTransito_*.");
         }
 
-        // Observaciones e idempotencia
+        // 4) Lógica/Persistencia
         if (!string.IsNullOrWhiteSpace(req.Observaciones))
-        {
             rec.Observaciones = string.IsNullOrWhiteSpace(rec.Observaciones)
                 ? req.Observaciones
                 : $"{rec.Observaciones} | {req.Observaciones}";
-        }
-        rec.IdempotencyKey = req.IdempotencyKey;
+
+        SetScopedIdem(rec, scope, req.IdempotencyKey);
         rec.UltimaActualizacion = DateTimeOffset.UtcNow;
 
-        await ((IPlantaDbContext)_db).SaveChangesAsync(ct);
+        try
+        {
+            await ((IPlantaDbContext)_db).SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            return this.ConflictProblem("db/update", "Error al guardar", ex.InnerException?.Message ?? ex.Message);
+        }
 
         Response.Headers.ETag = ComputeReciboEtag(rec);
         return Ok(new { id = rec.Id, estado = (int)rec.Estado, updated = true });
     }
 
-    // ==========================
-    // ====== HELPERS PRIV ======
-    // ==========================
 
-    private static IQueryable<Recibo> ApplyFilters(
-        IQueryable<Recibo> q,
+    // ===== INICIO DE DESCARGA → estado 30 =====
+    [HttpPost("{id:guid}/descarga/inicio")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DescargaInicio(Guid id, [FromBody] DescargaInicioRequest req, CancellationToken ct = default)
+    {
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+
+        var rec = await _db.Query<Recibo>().FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (rec is null) return NotFound();
+
+        // 1) Idempotencia (scope)
+        const string scope = "descarga-inicio";
+        if (IsSameScopeIdem(rec.IdempotencyKey, scope, req.IdempotencyKey))
+        {
+            Response.Headers.ETag = ComputeReciboEtag(rec);
+            return Ok(new { id = rec.Id, estado = (int)rec.Estado, idempotent = true });
+        }
+        if (HasDifferentIdemSameScope(rec.IdempotencyKey, scope, req.IdempotencyKey))
+            return this.ConflictProblem("recibos/idempotencia", "Operación ya ejecutada", "Use la misma IdempotencyKey.");
+
+        // 2) If-Match
+        var ifMatch = Request.Headers.IfMatch.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(ifMatch) && !string.Equals(ifMatch, ComputeReciboEtag(rec), StringComparison.Ordinal))
+            return this.PreconditionFailedProblem("recibos/etag", "Precondición fallida", "If-Match no coincide.");
+
+        // 3) Estado
+        if (rec.Estado != (byte)ReciboEstado.EnPatioPlanta)
+            return this.ConflictProblem("recibos/estado-invalido", "Estado inválido",
+                "Solo se permite iniciar descarga desde 'EnPatioPlanta'.");
+
+        // 4) Lógica/Persistencia
+        rec.Estado = (byte)ReciboEstado.Descargando;
+        if (!string.IsNullOrWhiteSpace(req.Observaciones))
+            rec.Observaciones = string.IsNullOrWhiteSpace(rec.Observaciones)
+                ? req.Observaciones
+                : $"{rec.Observaciones} | {req.Observaciones}";
+
+        SetScopedIdem(rec, scope, req.IdempotencyKey);
+        rec.UltimaActualizacion = DateTimeOffset.UtcNow;
+
+        try
+        {
+            await ((IPlantaDbContext)_db).SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            return this.ConflictProblem("db/update", "Error al guardar", ex.InnerException?.Message ?? ex.Message);
+        }
+
+        Response.Headers.ETag = ComputeReciboEtag(rec);
+        return Ok(new { id = rec.Id, estado = (int)rec.Estado, updated = true });
+    }
+
+
+    // ===== FIN DE DESCARGA → Proceso + estado 40 =====
+    [HttpPost("{id:guid}/descarga/fin")]
+    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    public async Task<IActionResult> DescargaFin(Guid id, [FromBody] DescargaFinRequest req, CancellationToken ct = default)
+    {
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+
+        var rec = await _db.Query<Recibo>().FirstOrDefaultAsync(r => r.Id == id, ct);
+        if (rec is null) return NotFound();
+
+        // 1) Idempotencia (scope)
+        const string scope = "descarga-fin";
+        if (IsSameScopeIdem(rec.IdempotencyKey, scope, req.IdempotencyKey))
+        {
+            Response.Headers.ETag = ComputeReciboEtag(rec);
+            return Ok(new { id = rec.Id, estado = (int)rec.Estado, idempotent = true });
+        }
+        if (HasDifferentIdemSameScope(rec.IdempotencyKey, scope, req.IdempotencyKey))
+            return this.ConflictProblem("recibos/idempotencia", "Operación ya ejecutada", "Use la misma IdempotencyKey.");
+
+        // 2) If-Match
+        var ifMatch = Request.Headers.IfMatch.FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(ifMatch) && !string.Equals(ifMatch, ComputeReciboEtag(rec), StringComparison.Ordinal))
+            return this.PreconditionFailedProblem("recibos/etag", "Precondición fallida", "If-Match no coincide.");
+
+        // 3) Estado (20 o 30)
+        if (rec.Estado != (byte)ReciboEstado.EnPatioPlanta &&
+            rec.Estado != (byte)ReciboEstado.Descargando)
+            return this.ConflictProblem("recibos/estado-invalido", "Estado inválido",
+                "El fin de descarga solo aplica cuando el recibo está EnPatioPlanta o Descargando.");
+
+        // 4) Validaciones de proceso (control de masa)
+        if (req.Proceso?.Salidas is null || req.Proceso.Salidas.Count == 0)
+            return this.ValidationProblem("recibos/proceso", "Debe incluir al menos una salida.");
+
+        var entrada = req.Proceso.Entrada.Cantidad;
+        var totalSalidas = req.Proceso.Salidas.Sum(s => s.Cantidad);
+        if (entrada <= 0 || totalSalidas <= 0)
+            return this.ValidationProblem("recibos/proceso", "Entrada y salidas deben ser > 0.");
+
+        var delta = Math.Abs(entrada - totalSalidas);
+        var tolPct = req.Proceso.ToleranciaPct ?? 1.0m; // default 1%
+        var maxDelta = (entrada * tolPct) / 100m;
+
+        if (delta > maxDelta)
+            return this.ConflictProblem("recibos/proceso/descuadre", "Control de masa falló",
+                $"Δ={delta} m3 fuera de tolerancia ({tolPct}%).");
+
+        // 5) Persistir Proceso + Detalles y actualizar Recibo
+        var proc = new Proceso
+        {
+            ReciboId = rec.Id,
+            RecetaId = req.Proceso.RecetaId,
+            EntradaM3 = entrada,
+            Observacion = string.IsNullOrWhiteSpace(req.Observaciones) ? null : req.Observaciones,
+            CreadoEn = DateTimeOffset.UtcNow
+        };
+
+        try
+        {
+            await _db.AddAsync(proc, ct);
+            await ((IPlantaDbContext)_db).SaveChangesAsync(ct); // genera Id
+
+            foreach (var s in req.Proceso.Salidas)
+            {
+                var det = new ProcesoDet
+                {
+                    ProcesoId = proc.Id,
+                    ProductoId = s.ProductoId,
+                    CantidadM3 = s.Cantidad
+                };
+                await _db.AddAsync(det, ct);
+            }
+
+            rec.Estado = (byte)ReciboEstado.Procesado;
+            if (!string.IsNullOrWhiteSpace(req.Observaciones))
+                rec.Observaciones = string.IsNullOrWhiteSpace(rec.Observaciones)
+                    ? req.Observaciones
+                    : $"{rec.Observaciones} | {req.Observaciones}";
+
+            SetScopedIdem(rec, scope, req.IdempotencyKey);
+            rec.UltimaActualizacion = DateTimeOffset.UtcNow;
+
+            await ((IPlantaDbContext)_db).SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException ex)
+        {
+            return this.ConflictProblem("db/update", "Error al guardar", ex.InnerException?.Message ?? ex.Message);
+        }
+
+        Response.Headers.ETag = ComputeReciboEtag(rec);
+        return Ok(new { id = rec.Id, estado = (int)rec.Estado, procesoId = proc.Id, updated = true });
+    }
+
+    // -------- Helpers --------
+    private static IQueryable<Recibo> ApplyFilters(IQueryable<Recibo> q,
         int? empresaId, int? vehiculoId, int? clienteId, int? materialId,
         DateTimeOffset? desde, DateTimeOffset? hasta, string? qtext)
     {
@@ -227,18 +347,25 @@ public sealed class RecibosController : ControllerBase
         if (desde.HasValue) q = q.Where(r => r.FechaCreacion >= desde.Value);
         if (hasta.HasValue) q = q.Where(r => r.FechaCreacion <= hasta.Value);
         if (!string.IsNullOrWhiteSpace(qtext))
-            q = q.Where(r =>
-                (r.PlacaSnapshot ?? string.Empty).Contains(qtext) ||
-                (r.Observaciones ?? string.Empty).Contains(qtext));
+            q = q.Where(r => (r.PlacaSnapshot ?? string.Empty).Contains(qtext) ||
+                             (r.Observaciones ?? string.Empty).Contains(qtext));
         return q;
     }
 
+    private static bool IsSameScopeIdem(string? current, string scope, string key)
+        => !string.IsNullOrWhiteSpace(current) && string.Equals(current, $"{scope}:{key}", StringComparison.Ordinal);
+
+    private static bool HasDifferentIdemSameScope(string? current, string scope, string key)
+        => !string.IsNullOrWhiteSpace(current) && current!.StartsWith(scope + ":", StringComparison.Ordinal)
+           && !string.Equals(current, $"{scope}:{key}", StringComparison.Ordinal);
+
+    private static void SetScopedIdem(Recibo r, string scope, string key)
+        => r.IdempotencyKey = $"{scope}:{key}";
+
     private static string ComputeReciboEtag(Recibo r)
     {
-        long last = r.UltimaActualizacion.HasValue
-            ? r.UltimaActualizacion.Value.ToUnixTimeSeconds()
-            : 0L;
-        int estado = (int)r.Estado; // r.Estado es byte; lo exponemos como int
+        long last = r.UltimaActualizacion.HasValue ? r.UltimaActualizacion.Value.ToUnixTimeSeconds() : 0L;
+        int estado = r.Estado;
         return $"W/\"{r.Id:N}-{last}-{estado}\"";
     }
 
@@ -268,11 +395,7 @@ public sealed class RecibosController : ControllerBase
 
         var etag = $"W/\"{sig?.Count ?? 0}-{sig?.MaxCon ?? 0}-{(sig?.MaxUpd ?? DateTimeOffset.MinValue).ToUnixTimeSeconds()}\"";
 
-        _cache.Set(key, etag, new MemoryCacheEntryOptions
-        {
-            AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(60)
-        });
-
+        _cache.Set(key, etag, new MemoryCacheEntryOptions { AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(60) });
         return etag;
     }
 }
