@@ -1,4 +1,5 @@
-﻿// Ruta: /Planta.Infrastructure/Services/RecibosService.cs | V1.10
+﻿// Ruta: /Planta.Infrastructure/Services/RecibosService.cs | V1.12
+#nullable enable
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Planta.Application.Abstractions;
@@ -9,6 +10,7 @@ using Planta.Data.Entities;
 using Planta.Infrastructure.Options;
 using System;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -30,9 +32,10 @@ namespace Planta.Infrastructure.Services
             _roFactory = roFactory;
         }
 
+        // ===== Listado (firma con ReciboEstado?) =====
         public async Task<PagedResult<ReciboListItemDto>> ListarAsync(
             PagedRequest req,
-            int? empresaId, int? estado, int? clienteId,
+            int? empresaId, ReciboEstado? estado, int? clienteId,
             DateTimeOffset? desde, DateTimeOffset? hasta,
             string? search, CancellationToken ct)
         {
@@ -91,23 +94,39 @@ namespace Planta.Infrastructure.Services
             return r is null ? null : Map(r);
         }
 
-        public async Task<ReciboDetailDto> CrearAsync(
-            CrearReciboRequest req, string? idempotencyKeyHeader, string? usuario, CancellationToken ct)
+        // ===== Crear (tupla: Response + Idempotent) =====
+        public async Task<(CrearReciboResponse Response, bool Idempotent)> CrearAsync(
+            CrearReciboRequest req, string? idempotencyKeyHeader, CancellationToken ct)
         {
-            if (req.Cantidad <= 0) throw new ArgumentException("La cantidad debe ser mayor a 0.");
-            if (req.DestinoTipo == 2 && !req.ClienteId.HasValue)
-                throw new ArgumentException("ClienteId es obligatorio para destino ClienteDirecto.");
+            // Validaciones mínimas contrato
+            if (!req.Cantidad.HasValue || req.Cantidad.Value <= 0)
+                throw new ArgumentException("La cantidad debe ser mayor a 0.", nameof(req.Cantidad));
+            if (req.Destino == DestinoTipo.ClienteDirecto && !req.ClienteId.HasValue)
+                throw new ArgumentException("ClienteId es obligatorio para destino ClienteDirecto.", nameof(req.ClienteId));
 
-            var idem = string.IsNullOrWhiteSpace(idempotencyKeyHeader) ? req.IdempotencyKey : idempotencyKeyHeader;
-            if (!string.IsNullOrWhiteSpace(idem))
+            // Idempotencia create: scope + key
+            var scope = string.IsNullOrWhiteSpace(req.IdempotencyScope) ? "create" : req.IdempotencyScope.Trim();
+            var key = !string.IsNullOrWhiteSpace(req.IdempotencyKey) ? req.IdempotencyKey.Trim() : idempotencyKeyHeader;
+            if (string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("IdempotencyKey es requerido.", nameof(req.IdempotencyKey));
+            var composed = $"{scope}:{key}";
+
+            var existente = await _db.Set<Recibo>()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.IdempotencyKey == composed, ct);
+
+            if (existente is not null)
             {
-                var existente = await _db.Set<Recibo>()
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.IdempotencyKey == idem, ct);
-                if (existente is not null)
-                    return Map(existente);
+                var etExisting = ComputeEtag(existente);
+                return (new CrearReciboResponse
+                {
+                    ReciboId = existente.Id,
+                    Estado = (ReciboEstado)existente.Estado,
+                    ETag = etExisting
+                }, true);
             }
 
+            // Snapshots (placa, conductor)
             var (placa, resolvedConductorId, conductorNombre) =
                 await ResolverSnapshotsAsync(req.VehiculoId, req.ConductorId, ct);
 
@@ -116,22 +135,26 @@ namespace Planta.Infrastructure.Services
             var entity = new Recibo
             {
                 EmpresaId = req.EmpresaId,
-                FechaCreacion = ahora,
-                Estado = (byte)(req.DestinoTipo == 1 ? ReciboEstado.EnTransito_Planta : ReciboEstado.EnTransito_Cliente),
-                DestinoTipo = req.DestinoTipo,
+                FechaCreacion = ahora, // la BD también lo setea por default; mantenemos coherencia
+                Estado = (byte)(req.Destino == DestinoTipo.Planta
+                                    ? ReciboEstado.EnTransito_Planta
+                                    : ReciboEstado.EnTransito_Cliente),
+                DestinoTipo = (byte)req.Destino,
                 VehiculoId = req.VehiculoId,
                 ConductorId = resolvedConductorId,
                 ClienteId = req.ClienteId,
                 MaterialId = req.MaterialId,
-                Observaciones = req.Observaciones,
+                Observaciones = string.IsNullOrWhiteSpace(req.ObservacionesIniciales)
+                                    ? "[Creación]"
+                                    : $"[Creación] {req.ObservacionesIniciales.Trim()}",
                 UltimaActualizacion = ahora,
                 Activo = true,
-                Cantidad = req.Cantidad,
+                Cantidad = req.Cantidad!.Value, // validado arriba
                 AlmacenOrigenId = req.AlmacenOrigenId,
                 PlacaSnapshot = placa,
                 ConductorNombreSnapshot = conductorNombre,
-                UsuarioCreador = string.IsNullOrWhiteSpace(usuario) ? "api" : usuario,
-                IdempotencyKey = string.IsNullOrWhiteSpace(idem) ? null : idem
+                UsuarioCreador = "api",
+                IdempotencyKey = composed
             };
 
             _db.Add(entity);
@@ -145,17 +168,24 @@ namespace Planta.Infrastructure.Services
                 await _db.SaveChangesAsync(ct);
             }
 
-            return Map(entity);
+            var etag = ComputeEtag(entity);
+
+            return (new CrearReciboResponse
+            {
+                ReciboId = entity.Id,
+                Estado = (ReciboEstado)entity.Estado,
+                ETag = etag
+            }, false);
         }
 
-        public async Task<ReciboDetailDto> CambiarEstadoAsync(
-            Guid id, ReciboEstado nuevo, string? comentario, CancellationToken ct)
+        // ===== Cambiar estado (tupla: Dto + ETag) =====
+        public async Task<(ReciboDetailDto Dto, string ETag)> CambiarEstadoAsync(
+            Guid id, ReciboEstado nuevo, string? comentario, string? idempotencyKey, CancellationToken ct)
         {
             var r = await _db.Set<Recibo>().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) throw new InvalidOperationException("Recibo no encontrado.");
 
             var actual = (ReciboEstado)r.Estado;
-
             var valida = (actual, nuevo) switch
             {
                 (ReciboEstado.Borrador, ReciboEstado.EnTransito_Planta) => true,
@@ -167,7 +197,6 @@ namespace Planta.Infrastructure.Services
                 (_, ReciboEstado.Anulado) => true,
                 _ => false
             };
-
             if (!valida)
                 throw new InvalidOperationException($"Transición inválida: {actual} → {nuevo}");
 
@@ -179,19 +208,49 @@ namespace Planta.Infrastructure.Services
                     ? comentario
                     : $"{r.Observaciones} | {comentario}";
 
+            if (!string.IsNullOrWhiteSpace(idempotencyKey))
+                r.IdempotencyKey = $"estado:{idempotencyKey.Trim()}";
+
             await _db.SaveChangesAsync(ct);
-            return Map(r);
+
+            var dto = Map(r);
+            var etag = ComputeEtag(r);
+            return (dto, etag);
         }
 
-        // ✅ NUEVO: Check-in (EnTransito_Planta → EnPatioPlanta) con log en op.ReciboEstadoLog
-        public async Task<ReciboDetailDto> CheckinAsync(Guid id, string? gps, string? comentario, CancellationToken ct)
+        // ===== Check-in (tupla: Dto + ETag + Idempotent) =====
+        // Nota: Validación If-Match/ETag puede hacerse arriba (API). Aquí devolvemos siempre el ETag actual.
+        public async Task<(ReciboDetailDto Dto, string ETag, bool Idempotent)> CheckinAsync(
+            Guid id, string? gps, string? comentario, string? idempotencyKey, string ifMatch, string etag, CancellationToken ct)
         {
             var r = await _db.Set<Recibo>().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) throw new InvalidOperationException("Recibo no encontrado.");
 
+            // Idempotencia por scope "checkin"
+            var scope = "checkin";
+            var key = idempotencyKey?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(r.IdempotencyKey) &&
+                r.IdempotencyKey.Equals($"{scope}:{key}", StringComparison.Ordinal))
+            {
+                // ya ejecutado con misma key
+                var et = ComputeEtag(r);
+                return (Map(r), et, true);
+            }
+            if (!string.IsNullOrWhiteSpace(r.IdempotencyKey) &&
+                r.IdempotencyKey.StartsWith(scope + ":", StringComparison.Ordinal) &&
+                !r.IdempotencyKey.Equals($"{scope}:{key}", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Use la misma IdempotencyKey (scope checkin).");
+            }
+
             var actual = (ReciboEstado)r.Estado;
             if (actual != ReciboEstado.EnTransito_Planta)
                 throw new InvalidOperationException($"Transición inválida: {actual} → {ReciboEstado.EnPatioPlanta}");
+
+            // (opcional) precondición If-Match sencilla
+            var currentEtag = ComputeEtag(r);
+            if (!string.IsNullOrWhiteSpace(ifMatch) && !string.Equals(ifMatch.Trim(), currentEtag, StringComparison.Ordinal))
+                throw new InvalidOperationException("Precondition Failed (ETag).");
 
             r.Estado = (byte)ReciboEstado.EnPatioPlanta;
             r.UltimaActualizacion = DateTimeOffset.UtcNow;
@@ -210,8 +269,14 @@ namespace Planta.Infrastructure.Services
                 GPS = gps
             });
 
+            // set de idempotencia por scope
+            if (!string.IsNullOrWhiteSpace(key))
+                r.IdempotencyKey = $"{scope}:{key}";
+
             await _db.SaveChangesAsync(ct);
-            return Map(r);
+
+            var etagAfter = ComputeEtag(r);
+            return (Map(r), etagAfter, false);
         }
 
         // -------- Helpers --------
@@ -269,5 +334,13 @@ namespace Planta.Infrastructure.Services
             Cantidad = r.Cantidad,
             Observaciones = r.Observaciones
         };
+
+        // ETag consistente con API: W/"base64(consecutivo|timestamp|estado)"
+        private static string ComputeEtag(Recibo r)
+        {
+            var stamp = r.UltimaActualizacion ?? r.FechaCreacion;
+            var raw = $"{r.Consecutivo}|{stamp.UtcDateTime:o}|{r.Estado}";
+            return $"W/\"{Convert.ToBase64String(Encoding.UTF8.GetBytes(raw))}\"";
+        }
     }
 }

@@ -1,11 +1,11 @@
-﻿// Ruta: /Planta.Api/Controllers/RecibosController.cs | V2.11
+﻿#nullable enable
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Planta.Api.Common;
-using Planta.Contracts.Recibos;
-using Planta.Data.Entities;                      // Recibo, Proceso, ProcesoDet
+using Planta.Contracts.Recibos;                 // DTOs/Enums de Contracts
+using Planta.Data.Entities;                    // Recibo, Proceso, ProcesoDet
 using System;
 using System.Linq;
 using System.Threading;
@@ -25,6 +25,127 @@ public sealed class RecibosController : ControllerBase
     {
         _db = db;
         _cache = cache;
+    }
+
+    // ========= CREAR RECIBO =========
+    [HttpPost]
+    [ProducesResponseType(typeof(CrearReciboResponse), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(CrearReciboResponse), StatusCodes.Status200OK)]
+    public async Task<IActionResult> CrearRecibo([FromBody] CrearReciboRequest body, CancellationToken ct = default)
+    {
+        if (!ModelState.IsValid) return ValidationProblem(ModelState);
+
+        // 0) Idempotencia: scope+key (header como fallback)
+        var scope = string.IsNullOrWhiteSpace(body.IdempotencyScope) ? "create" : body.IdempotencyScope.Trim();
+        var key = !string.IsNullOrWhiteSpace(body.IdempotencyKey)
+            ? body.IdempotencyKey.Trim()
+            : Request.Headers["Idempotency-Key"].ToString();
+
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            ModelState.AddModelError(nameof(body.IdempotencyKey), "IdempotencyKey es requerido.");
+            return ValidationProblem(ModelState);
+        }
+
+        // 1) ¿Ya existe por (scope:key)?
+        var composed = $"{scope}:{key}";
+        var existing = await _db.Query<Recibo>()
+            .AsNoTracking()
+            .Where(r => r.IdempotencyKey == composed)
+            .Select(r => new
+            {
+                r.Id,
+                r.Consecutivo,
+                r.UltimaActualizacion,
+                r.FechaCreacion,
+                r.Estado
+            })
+            .FirstOrDefaultAsync(ct);
+
+        if (existing is not null)
+        {
+            var etagExisting = ComputeReciboEtag(existing.Consecutivo, existing.UltimaActualizacion, existing.FechaCreacion, existing.Estado);
+            Response.Headers.ETag = etagExisting;
+            Response.Headers["X-Idempotent"] = "true";
+            return Ok(new CrearReciboResponse
+            {
+                ReciboId = existing.Id,
+                Estado = (Planta.Contracts.Recibos.ReciboEstado)existing.Estado,
+                ETag = etagExisting
+            });
+        }
+
+        // 2) Validaciones mínimas del body (según tu esquema op.Recibo)
+        if (!body.Cantidad.HasValue)
+        {
+            ModelState.AddModelError(nameof(body.Cantidad), "Cantidad es requerida.");
+            return ValidationProblem(ModelState);
+        }
+
+        // 3) Crear entidad (Data.Entities) alineada a la BD
+        var rec = new Recibo
+        {
+            EmpresaId = body.EmpresaId,
+            VehiculoId = body.VehiculoId,
+            MaterialId = body.MaterialId,
+            AlmacenOrigenId = body.AlmacenOrigenId,
+            ClienteId = body.ClienteId,
+            ConductorId = body.ConductorId,
+            PlacaSnapshot = string.IsNullOrWhiteSpace(body.PlacaSnapshot) ? null : body.PlacaSnapshot.Trim(),
+            ConductorNombreSnapshot = string.IsNullOrWhiteSpace(body.ConductorNombreSnapshot) ? null : body.ConductorNombreSnapshot.Trim(),
+            DestinoTipo = (byte)body.Destino,
+            Estado = (int)Planta.Contracts.Recibos.ReciboEstado.EnTransito_Planta,
+            UsuarioCreador = GetUsuarioActual() ?? "system",
+            Observaciones = string.IsNullOrWhiteSpace(body.ObservacionesIniciales)
+                ? "[Creación]"
+                : $"[Creación] {body.ObservacionesIniciales.Trim()}",
+            Cantidad = body.Cantidad.Value,
+            IdempotencyKey = composed,
+            Activo = true // default en BD
+        };
+
+        try
+        {
+            await _db.AddAsync(rec, ct);
+            await ((IPlantaDbContext)_db).SaveChangesAsync(ct);
+
+            // Refrescar valores generados por la BD
+            var saved = await _db.Query<Recibo>()
+                .AsNoTracking()
+                .Where(x => x.Id == rec.Id)
+                .Select(x => new
+                {
+                    x.Id,
+                    x.Consecutivo,
+                    x.UltimaActualizacion,
+                    x.FechaCreacion,
+                    x.Estado
+                })
+                .FirstAsync(ct);
+
+            var etag = ComputeReciboEtag(saved.Consecutivo, saved.UltimaActualizacion, saved.FechaCreacion, saved.Estado);
+            Response.Headers.ETag = etag;
+
+            var location = Url.Action(nameof(Obtener), new { id = saved.Id });
+            return Created(location!, new CrearReciboResponse
+            {
+                ReciboId = saved.Id,
+                Estado = (Planta.Contracts.Recibos.ReciboEstado)saved.Estado,
+                ETag = etag
+            });
+        }
+        catch (DbUpdateException ex)
+        {
+            return this.ConflictProblem("db/update", "Error al guardar", ex.InnerException?.Message ?? ex.Message);
+        }
+    }
+
+    // helper para usuario
+    private string? GetUsuarioActual()
+    {
+        return User?.FindFirst("preferred_username")?.Value
+            ?? User?.Identity?.Name
+            ?? User?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
     }
 
     // -------- GRID --------
@@ -116,9 +237,7 @@ public sealed class RecibosController : ControllerBase
 
         if (r is null) return NotFound();
 
-        long last = r.UltimaActualizacion.HasValue ? r.UltimaActualizacion.Value.ToUnixTimeSeconds() : 0L;
-        var etag = $"W/\"{r.Id:N}-{last}-{r.Estado}\"";
-
+        var etag = ComputeReciboEtag(r.Consecutivo, r.UltimaActualizacion, r.FechaCreacion, r.Estado);
         Response.Headers.ETag = etag;
         Response.Headers.CacheControl = "public, max-age=60";
         return Ok(r);
@@ -149,22 +268,12 @@ public sealed class RecibosController : ControllerBase
             return this.PreconditionFailedProblem("recibos/etag", "Precondición fallida", "If-Match no coincide.");
 
         // 3) Reglas de estado
-        if (rec.Estado == (byte)ReciboEstado.EnTransito_Planta)
-        {
-            rec.Estado = (byte)ReciboEstado.EnPatioPlanta;
-        }
-        else if (rec.Estado == (byte)ReciboEstado.EnTransito_Cliente)
-        {
-            return this.ConflictProblem("recibos/destino-cliente", "Flujo no permitido",
-                "Check-in solo aplica a recibos con destino Planta (EnTransito_Planta).");
-        }
-        else
-        {
+        if (rec.Estado != (int)ReciboEstado.EnTransito_Planta)
             return this.ConflictProblem("recibos/estado-invalido", "Estado inválido",
-                "Solo se permite check-in desde estados EnTransito_*.");
-        }
+                "Solo se permite check-in desde 'EnTransito_Planta'.");
 
         // 4) Lógica/Persistencia
+        rec.Estado = (int)ReciboEstado.Descargando;
         if (!string.IsNullOrWhiteSpace(req.Observaciones))
             rec.Observaciones = string.IsNullOrWhiteSpace(rec.Observaciones)
                 ? req.Observaciones
@@ -186,8 +295,7 @@ public sealed class RecibosController : ControllerBase
         return Ok(new { id = rec.Id, estado = (int)rec.Estado, updated = true });
     }
 
-
-    // ===== INICIO DE DESCARGA → estado 30 =====
+    // ===== INICIO DE DESCARGA =====
     [HttpPost("{id:guid}/descarga/inicio")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     public async Task<IActionResult> DescargaInicio(Guid id, [FromBody] DescargaInicioRequest req, CancellationToken ct = default)
@@ -213,12 +321,11 @@ public sealed class RecibosController : ControllerBase
             return this.PreconditionFailedProblem("recibos/etag", "Precondición fallida", "If-Match no coincide.");
 
         // 3) Estado
-        if (rec.Estado != (byte)ReciboEstado.EnPatioPlanta)
+        if (rec.Estado != (int)ReciboEstado.Descargando)
             return this.ConflictProblem("recibos/estado-invalido", "Estado inválido",
-                "Solo se permite iniciar descarga desde 'EnPatioPlanta'.");
+                "Solo se permite iniciar descarga desde 'Descargando'.");
 
-        // 4) Lógica/Persistencia
-        rec.Estado = (byte)ReciboEstado.Descargando;
+        // 4) Lógica/Persistencia (no cambia estado)
         if (!string.IsNullOrWhiteSpace(req.Observaciones))
             rec.Observaciones = string.IsNullOrWhiteSpace(rec.Observaciones)
                 ? req.Observaciones
@@ -240,8 +347,7 @@ public sealed class RecibosController : ControllerBase
         return Ok(new { id = rec.Id, estado = (int)rec.Estado, updated = true });
     }
 
-
-    // ===== FIN DE DESCARGA → Proceso + estado 40 =====
+    // ===== FIN DE DESCARGA → Proceso + Procesado =====
     [HttpPost("{id:guid}/descarga/fin")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     public async Task<IActionResult> DescargaFin(Guid id, [FromBody] DescargaFinRequest req, CancellationToken ct = default)
@@ -266,11 +372,10 @@ public sealed class RecibosController : ControllerBase
         if (!string.IsNullOrWhiteSpace(ifMatch) && !string.Equals(ifMatch, ComputeReciboEtag(rec), StringComparison.Ordinal))
             return this.PreconditionFailedProblem("recibos/etag", "Precondición fallida", "If-Match no coincide.");
 
-        // 3) Estado (20 o 30)
-        if (rec.Estado != (byte)ReciboEstado.EnPatioPlanta &&
-            rec.Estado != (byte)ReciboEstado.Descargando)
+        // 3) Estado permitido
+        if (rec.Estado != (int)ReciboEstado.Descargando)
             return this.ConflictProblem("recibos/estado-invalido", "Estado inválido",
-                "El fin de descarga solo aplica cuando el recibo está EnPatioPlanta o Descargando.");
+                "El fin de descarga solo aplica cuando el recibo está 'Descargando'.");
 
         // 4) Validaciones de proceso (control de masa)
         if (req.Proceso?.Salidas is null || req.Proceso.Salidas.Count == 0)
@@ -315,7 +420,7 @@ public sealed class RecibosController : ControllerBase
                 await _db.AddAsync(det, ct);
             }
 
-            rec.Estado = (byte)ReciboEstado.Procesado;
+            rec.Estado = (int)ReciboEstado.Procesado;
             if (!string.IsNullOrWhiteSpace(req.Observaciones))
                 rec.Observaciones = string.IsNullOrWhiteSpace(rec.Observaciones)
                     ? req.Observaciones
@@ -362,11 +467,17 @@ public sealed class RecibosController : ControllerBase
     private static void SetScopedIdem(Recibo r, string scope, string key)
         => r.IdempotencyKey = $"{scope}:{key}";
 
+    // ---- ETag helpers ----
+    // Versión que recibe la entidad Recibo
     private static string ComputeReciboEtag(Recibo r)
+        => ComputeReciboEtag(r.Consecutivo, r.UltimaActualizacion, r.FechaCreacion, r.Estado);
+
+    // Versión usada al proyectar anónimos (detalles/grid)
+    private static string ComputeReciboEtag(int consecutivo, DateTimeOffset? ultimaActualizacion, DateTimeOffset fechaCreacion, int estado)
     {
-        long last = r.UltimaActualizacion.HasValue ? r.UltimaActualizacion.Value.ToUnixTimeSeconds() : 0L;
-        int estado = r.Estado;
-        return $"W/\"{r.Id:N}-{last}-{estado}\"";
+        var stamp = ultimaActualizacion ?? fechaCreacion;
+        var raw = $"{consecutivo}|{stamp.UtcDateTime:o}|{estado}";
+        return $"W/\"{System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(raw))}\"";
     }
 
     private async Task<string> ComputeGridEtagAsync(
