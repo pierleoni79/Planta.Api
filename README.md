@@ -1,34 +1,54 @@
-<!-- Ruta: /README.md | V4.0 (Paso D en curso) -->
+# Planta.Api — Vista general del repo
 
-# Planta.Api
-
-API .NET para operación de Planta (recepción, catálogos, procesos y stock).  
-**Estado del proyecto**:  
-- ✅ Módulo A — Integridad & Rendimiento DB (completado)  
-- ✅ Módulo B — Catálogos + Cache/ETag (completado)  
-- ✅ Módulo C — Recibos (App + API) (completado)  
-- 🚧 Módulo D — Proceso de Trituración (en curso)  
-- ⏭ Módulo E — Stock & Trazabilidad (próximo)
+Este README está optimizado para auditorías rápidas (por humanos y por ChatGPT) y **muestra automáticamente el árbol completo de la rama `master`** entre las marcas de abajo.
 
 ---
 
-## Requisitos
+## Navegación rápida (carpetas clave)
 
-- **.NET 8 SDK**
-- **SQL Server** (Developer/Express/Container)
-- PowerShell/Bash para ejecutar scripts
-- (Opcional) Postman/Insomnia/cURL para llamadas de verificación
+- **API** → [`/Planta.Api`](Planta.Api/)
+  - `Program.cs`, `appsettings.*.json`
+- **Application** → [`/Planta.Application`](Planta.Application/)
+  - `Features/**` (CQRS, handlers, validaciones)
+- **Contracts** → [`/Planta.Contracts`](Planta.Contracts/)
+  - DTOs públicos
+- **Domain** → [`/Planta.Domain`](Planta.Domain/)
+  - `Entities/**`, `ValueObjects/**`, `Enums/**`
+- **Data (EF Core)** → [`/Planta.Data`](Planta.Data/)
+  - `PlantaDbContext.cs`, `Configurations/**`, `Migrations/**`
+- **Infrastructure** → [`/Planta.Infrastructure`](Planta.Infrastructure/)
+  - Integraciones externas/adapters
+- **Mobile (MAUI)** → [`/Planta.Mobile`](Planta.Mobile/)
+- **Reportes** → [`/Planta.Reportes.*`](./)
+- **Tests** → [`/tests`](tests/)
+- **Docs** → [`/docs`](docs/)
+
+> Si alguna ruta difiere, actualízala aquí para mantener la navegación consistente.
 
 ---
 
-## Configuración
+## Cómo pedirme auditorías (desde ChatGPT)
 
-1) **Cadena de conexión (Dev)**  
-   En `Planta.Api/appsettings.Development.json` define `ConnectionStrings.Default`.  
-   Ejemplo:
-   ```json
-   {
-     "ConnectionStrings": {
-       "Default": "Server=localhost,1433;Database=PlantaDb;User Id=sa;Password=<tuPass>;TrustServerCertificate=true"
-     }
-   }
+> **AUDITA REPO (profunda)** — repo: `pierleoni79/Planta.Api` — rama: `master` — **sin leer README**
+
+Opcional (recomendado): usa tag/commit para snapshot inmutable, por ejemplo: `audit-YYYYMMDD-HHMM`.
+
+---
+
+## Estructura de la rama `master` (auto-generada)
+
+> _Se rellena automáticamente por GitHub Actions en cada push a `master`._
+
+<!-- BEGIN TREE -->
+_(pendiente de primera ejecución del workflow)_
+<!-- END TREE -->
+
+---
+
+## Comandos útiles
+
+```bash
+dotnet --info
+dotnet restore
+dotnet build -c Release
+dotnet test
