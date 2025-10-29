@@ -1,4 +1,4 @@
-﻿// Ruta: /Planta.Data/Configurations/ProcesoTrituracionSalidaConfig.cs | V2.2
+﻿// Ruta: /Planta.Data/Configurations/ProcesoTrituracionSalidaConfig.cs | V2.6
 #nullable enable
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -10,18 +10,36 @@ public sealed class ProcesoTrituracionSalidaConfig : IEntityTypeConfiguration<Pr
 {
     public void Configure(EntityTypeBuilder<ProcesoTrituracionSalida> b)
     {
-        b.ToTable("ProcesoDet", "prd");
-        b.HasKey(x => x.Id);
+        // ===== Tabla + CHECK =====
+        b.ToTable("ProcesoDet", "prd", tb =>
+        {
+            // Valida datos: no se permiten cantidades <= 0
+            tb.HasCheckConstraint("CK_ProcesoDet_CantidadM3_Pos", "[CantidadM3] > 0");
+        });
 
+        // ===== PK =====
+        b.HasKey(x => x.Id);
+        b.Property(x => x.Id).ValueGeneratedOnAdd(); // IDENTITY
+
+        // ===== Claves =====
         b.Property(x => x.ProcesoId).IsRequired();
         b.Property(x => x.ProductoId).IsRequired();
 
-        // Sombras: Dominio no tiene la propiedad concreta
+        // ===== Cantidad (propiedad sombra mapeada a la columna real) =====
         b.Property<decimal>("CantidadM3")
-            .HasColumnName("CantidadM3")
-            .HasPrecision(18, 3)
-            .IsRequired();
+         .HasColumnName("CantidadM3")
+         .HasPrecision(18, 3)
+         .IsRequired();
 
-        b.HasIndex(x => new { x.ProcesoId, x.ProductoId });
+        // ===== Índice único (coincide con tu esquema) =====
+        b.HasIndex(x => new { x.ProcesoId, x.ProductoId })
+         .IsUnique()
+         .HasDatabaseName("IX_prd_ProcesoDet_Proceso_Producto");
+
+        // ===== Relación con Proceso (consistente con ProcesoConfig) =====
+        b.HasOne(s => s.Proceso!)
+         .WithMany(p => p.Salidas)
+         .HasForeignKey(s => s.ProcesoId)
+         .OnDelete(DeleteBehavior.Cascade);
     }
 }

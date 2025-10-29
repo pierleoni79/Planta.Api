@@ -1,37 +1,25 @@
-﻿// Ruta: /Planta.Data/Entities/Proceso.cs | V1.2
+﻿// Ruta: /Planta.Data/Entities/Proceso.cs | V1.3 (LEGACY — NO EF)
 #nullable enable
 using System;
-using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
-using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Planta.Data.Entities;
 
-[Table("Proceso", Schema = "prd")]
+/// <summary>
+/// LEGACY: se conserva solo como referencia histórica.
+/// NO se mapea con EF. El mapeo real de prd.Proceso/prd.ProcesoDet
+/// lo hace el dominio: Planta.Domain.Produccion.ProcesoTrituracion*.
+/// </summary>
+[Obsolete("Legacy. Usa Planta.Domain.Produccion.ProcesoTrituracion*", error: false)]
 public sealed class Proceso
 {
     public int Id { get; set; }
-
-    // FK al recibo
-    public Guid ReciboId { get; set; }
-
-    // Según el inventario de columnas, RecetaId puede ser NULL
-    public int? RecetaId { get; set; }
-
-    // Manejo futuro de estados del proceso (tinyint)
-    public byte Estado { get; set; }
-
-    // decimal(18,3) en BD
-    [Column(TypeName = "decimal(18,3)")]
-    public decimal EntradaM3 { get; set; }
-
-    [MaxLength(1024)]
+    public Guid ReciboId { get; set; }     // FK a op.Recibo (configurada en ProcesoTrituracionConfig)
+    public int? RecetaId { get; set; }     // nullable según BD
+    public byte Estado { get; set; }       // tinyint
+    public decimal EntradaM3 { get; set; } // (18,3)
     public string? Observacion { get; set; }
-
-    // DEFAULT sysdatetimeoffset() en BD (puedes reafirmarlo en el Configuration)
     public DateTimeOffset CreadoEn { get; set; }
 
-    // ---- Navegaciones ----
-    public Recibo? Recibo { get; set; }
-    public ICollection<ProcesoDet> Detalles { get; set; } = new List<ProcesoDet>();
+    // ⚠️ Sin atributos [Table]/[Column]/[MaxLength] y sin navegaciones,
+    // para que EF no lo descubra por convención.
 }

@@ -1,8 +1,8 @@
-﻿// Ruta: /Planta.Data/Configurations/ReciboEstadoLogConfig.cs | V1.1
+﻿// Ruta: /Planta.Data/Configurations/ReciboEstadoLogConfig.cs | V1.2
 #nullable enable
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Planta.Data.Entities;   // ReciboEstadoLog, Recibo
+using Planta.Data.Entities;
 
 namespace Planta.Data.Configurations;
 
@@ -19,32 +19,33 @@ public sealed class ReciboEstadoLogConfig : IEntityTypeConfiguration<ReciboEstad
             .ValueGeneratedOnAdd();
 
         // Campos
-        b.Property(x => x.ReciboId)
-            .IsRequired();
+        b.Property(x => x.ReciboId).IsRequired();
 
-        // tinyint en BD
         b.Property(x => x.Estado)
             .HasColumnType("tinyint")
             .IsRequired();
 
-        // datetimeoffset con default
         b.Property(x => x.Cuando)
             .HasDefaultValueSql("sysdatetimeoffset()")
+            .ValueGeneratedOnAdd()
             .IsRequired();
 
         b.Property(x => x.Nota)
-            .HasMaxLength(512);
+            .HasMaxLength(512)
+            .IsRequired(false);
 
         b.Property(x => x.GPS)
-            .HasMaxLength(128);
+            .HasMaxLength(128)
+            .IsRequired(false);
 
-        // FK explícita a op.Recibo SIN cascada (preserva el historial si borran Recibo)
+        // FK explícita a op.Recibo SIN cascada (preserva historial)
         b.HasOne<Recibo>()
-            .WithMany() // no tienes navegación en Recibo; si la agregas, cámbiala aquí
+            .WithMany() // si luego agregas navegación en Recibo, cámbialo aquí
             .HasForeignKey(x => x.ReciboId)
-            .OnDelete(DeleteBehavior.Restrict);
+            .OnDelete(DeleteBehavior.NoAction)
+            .HasConstraintName("FK_ReciboEstadoLog_Recibo");
 
-        // Índice útil para lecturas: por Recibo y orden temporal
+        // Índice por Recibo y orden temporal
         b.HasIndex(x => new { x.ReciboId, x.Cuando })
          .HasDatabaseName("IX_ReciboEstadoLog_Recibo_Cuando");
     }
