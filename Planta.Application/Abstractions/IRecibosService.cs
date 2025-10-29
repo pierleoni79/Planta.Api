@@ -4,56 +4,87 @@ using System.Threading;
 using System.Threading.Tasks;
 using Planta.Contracts.Common;
 using Planta.Contracts.Recibos;
+using Planta.Contracts.Procesos;   // DescargaFin: payload de proceso
 
 namespace Planta.Application.Abstractions;
 
 /// <summary>
-/// Servicio de aplicación para Recibos, con soporte de Idempotencia por scope y ETag (If-Match).
+/// Servicio de aplicación para Recibos con ETag e Idempotencia (scope:key).
+/// Mantener esta interfaz 1:1 con la implementación en Infrastructure.
 /// </summary>
 public interface IRecibosService
 {
+    /// <summary>Listado paginado con filtros opcionales.</summary>
     Task<PagedResult<ReciboListItemDto>> ListarAsync(
         PagedRequest req,
         int? empresaId, ReciboEstado? estado, int? clienteId,
         DateTimeOffset? desde, DateTimeOffset? hasta,
         string? search, CancellationToken ct);
 
+    /// <summary>Obtiene un recibo por Id (sin validación condicional).</summary>
     Task<ReciboDetailDto?> ObtenerAsync(Guid id, CancellationToken ct);
 
     /// <summary>
-    /// Crea un recibo. Si (scope:key) ya fue ejecutado, devuelve el existente
-    /// y marca el resultado como idempotente.
+    /// GET condicional por ETag. Si <paramref name="ifNoneMatch"/> coincide con el ETag actual,
+    /// retorna <c>NotModified = true</c> y el ETag, con <c>Dto = null</c>.
     /// </summary>
-    /// <param name="req">Debe incluir IdempotencyScope/IdempotencyKey.</param>
-    /// <param name="usuario">Usuario que crea (se mapea a UsuarioCreador en BD).</param>
-    /// <returns>(response, idempotent)</returns>
+    Task<(ReciboDetailDto? Dto, string? ETag, bool NotModified)>
+        ObtenerConEtagAsync(Guid id, string? ifNoneMatch, CancellationToken ct);
+
+    /// <summary>
+    /// Crea un recibo; aplica idempotencia por (scope:key). La <paramref name="idempotencyKeyHeader"/>
+    /// puede venir de cabecera externa. Devuelve si el resultado fue idempotente.
+    /// </summary>
     Task<(CrearReciboResponse Response, bool Idempotent)> CrearAsync(
         CrearReciboRequest req,
-        string? usuario,
+        string? idempotencyKeyHeader,
         CancellationToken ct);
 
     /// <summary>
-    /// Cambio de estado genérico (uso administrativo). Requiere If-Match para concurrencia.
-    /// Devuelve DTO y nuevo ETag.
+    /// Cambio de estado genérico; devuelve DTO y nuevo ETag. Idempotencia opcional por key.
     /// </summary>
     Task<(ReciboDetailDto Dto, string ETag)> CambiarEstadoAsync(
         Guid id,
         ReciboEstado nuevo,
         string? comentario,
-        string? ifMatch,
+        string? idempotencyKey,
         CancellationToken ct);
 
     /// <summary>
-    /// Marca check-in en planta: EnTransito_Planta → Descargando.
-    /// Aplica orden: Idempotencia(scope:key) → If-Match/ETag → reglas → persistir(SetScopedIdem) → 200.
-    /// Devuelve DTO, nuevo ETag y si fue idempotente.
+    /// Check-in en planta. Orden: idempotencia (scope:key) → If-Match (ETag) →
+    /// reglas de transición → persistir → devolver ETag nuevo e indicador de idempotencia.
     /// </summary>
     Task<(ReciboDetailDto Dto, string ETag, bool Idempotent)> CheckinAsync(
         Guid id,
+        string? gps,
         string? comentario,
-        string? gps,              // si registras ubicación en ReciboEstadoLog
-        string? ifMatch,          // ETag del cliente
-        string idempotencyScope,  // p.ej. "checkin"
-        string idempotencyKey,    // único por intento
+        string? idempotencyKey,
+        string ifMatch,
+        string etag,
+        CancellationToken ct);
+
+    /// <summary>
+    /// Marca el inicio de la descarga (no cambia estado si tu regla así lo define).
+    /// Aplica If-Match (ETag) + Idempotency-Key; devuelve DTO y nuevo ETag.
+    /// </summary>
+    Task<(ReciboDetailDto Dto, string ETag)> DescargaInicioAsync(
+        Guid id,
+        string? comentario,
+        string ifMatch,
+        string etag,
+        string? idempotencyKey,
+        CancellationToken ct);
+
+    /// <summary>
+    /// Finaliza la descarga creando el Proceso (control de masa).
+    /// Aplica If-Match (ETag) + Idempotency-Key; devuelve DTO y nuevo ETag.
+    /// </summary>
+    Task<(ReciboDetailDto Dto, string ETag)> DescargaFinAsync(
+        Guid id,
+        ProcesarTrituracionRequest proceso,
+        string? comentario,
+        string ifMatch,
+        string etag,
+        string? idempotencyKey,
         CancellationToken ct);
 }

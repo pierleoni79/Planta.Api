@@ -57,6 +57,20 @@
 		<None Include="Views\Pickers\ConductorPickerPage.xaml" />
 		<None Include="Views\Pickers\VehiculoPickerPage.xaml" />
 	</ItemGroup>
+	<ItemGroup>
+	  <MauiXaml Update="AppShell.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	  <MauiXaml Update="Pages\Recibos\AjustesPage.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	  <MauiXaml Update="Pages\Recibos\ReciboDetallePage.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	  <MauiXaml Update="Pages\Recibos\RecibosListaPage.xaml">
+	    <Generator>MSBuild:Compile</Generator>
+	  </MauiXaml>
+	</ItemGroup>
 
 	<!-- appsettings.mobile.json como asset del paquete -->
 </Project>

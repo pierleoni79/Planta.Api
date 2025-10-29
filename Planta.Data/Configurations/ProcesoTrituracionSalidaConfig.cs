@@ -1,4 +1,5 @@
-﻿// Ruta: /Planta.Data/Configurations/ProcesoTrituracionSalidaConfig.cs | V2.1
+﻿// Ruta: /Planta.Data/Configurations/ProcesoTrituracionSalidaConfig.cs | V2.2
+#nullable enable
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using Planta.Domain.Produccion;
@@ -9,17 +10,15 @@ public sealed class ProcesoTrituracionSalidaConfig : IEntityTypeConfiguration<Pr
 {
     public void Configure(EntityTypeBuilder<ProcesoTrituracionSalida> b)
     {
-        // Tabla real: prd.ProcesoDet
         b.ToTable("ProcesoDet", "prd");
-
         b.HasKey(x => x.Id);
 
         b.Property(x => x.ProcesoId).IsRequired();
         b.Property(x => x.ProductoId).IsRequired();
 
-        // La entidad de dominio NO tiene 'CantidadM3', así que lo mapeamos como "shadow property".
-        // (Si luego agregas una propiedad CLR, cambia esto por b.Property(x => x.<tuPropiedad>).HasColumnName("CantidadM3")...)
+        // Sombras: Dominio no tiene la propiedad concreta
         b.Property<decimal>("CantidadM3")
+            .HasColumnName("CantidadM3")
             .HasPrecision(18, 3)
             .IsRequired();
 

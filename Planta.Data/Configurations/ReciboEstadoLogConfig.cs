@@ -1,6 +1,8 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿// Ruta: /Planta.Data/Configurations/ReciboEstadoLogConfig.cs | V1.1
+#nullable enable
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Planta.Data.Entities;   // ✅ usar la entidad real
+using Planta.Data.Entities;   // ReciboEstadoLog, Recibo
 
 namespace Planta.Data.Configurations;
 
@@ -8,21 +10,41 @@ public sealed class ReciboEstadoLogConfig : IEntityTypeConfiguration<ReciboEstad
 {
     public void Configure(EntityTypeBuilder<ReciboEstadoLog> b)
     {
-        // Tabla real: op.ReciboEstadoLog
+        // Tabla real
         b.ToTable("ReciboEstadoLog", "op");
 
+        // PK (bigint IDENTITY)
         b.HasKey(x => x.Id);
-        b.Property(x => x.Id).ValueGeneratedOnAdd();          // bigint IDENTITY
+        b.Property(x => x.Id)
+            .ValueGeneratedOnAdd();
 
-        b.Property(x => x.ReciboId).IsRequired();             // uniqueidentifier
-        b.Property(x => x.Estado).IsRequired();               // byte -> tinyint
+        // Campos
+        b.Property(x => x.ReciboId)
+            .IsRequired();
+
+        // tinyint en BD
+        b.Property(x => x.Estado)
+            .HasColumnType("tinyint")
+            .IsRequired();
+
+        // datetimeoffset con default
         b.Property(x => x.Cuando)
-            .HasDefaultValueSql("sysdatetimeoffset()");       // datetimeoffset
+            .HasDefaultValueSql("sysdatetimeoffset()")
+            .IsRequired();
 
-        b.Property(x => x.Nota).HasMaxLength(512);
-        b.Property(x => x.GPS).HasMaxLength(128);
+        b.Property(x => x.Nota)
+            .HasMaxLength(512);
 
-        // Índice útil para consultas por recibo y orden por fecha
+        b.Property(x => x.GPS)
+            .HasMaxLength(128);
+
+        // FK explícita a op.Recibo SIN cascada (preserva el historial si borran Recibo)
+        b.HasOne<Recibo>()
+            .WithMany() // no tienes navegación en Recibo; si la agregas, cámbiala aquí
+            .HasForeignKey(x => x.ReciboId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Índice útil para lecturas: por Recibo y orden temporal
         b.HasIndex(x => new { x.ReciboId, x.Cuando })
          .HasDatabaseName("IX_ReciboEstadoLog_Recibo_Cuando");
     }
