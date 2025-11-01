@@ -1,4 +1,5 @@
-﻿#nullable enable
+﻿// Ruta: /Planta.Mobile/Pages/Shared/PlacaResolverModalPage.xaml.cs | V1.7-fix (MAUI DI: Application.Current.Handler.MauiContext.Services)
+#nullable enable
 using System;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
@@ -17,8 +18,18 @@ public partial class PlacaResolverModalPage : ContentPage
     public PlacaResolverModalPage(string? placaInicial = null)
     {
         InitializeComponent();
-        _transporte = Application.Current!.Services.GetRequiredService<ITransporteApi>();
+
+        // ❗ En .NET MAUI no existe Application.Current.Services.
+        //    Los servicios se obtienen desde el MauiContext:
+        var sp = Application.Current?.Handler?.MauiContext?.Services
+                 ?? throw new InvalidOperationException(
+                     "El ServiceProvider de MAUI no está disponible aún. Asegúrate de construir la app con MauiProgram.CreateMauiApp() antes de crear esta página.");
+
+        _transporte = sp.GetRequiredService<ITransporteApi>();
+
         TxtPlaca.Text = placaInicial?.Trim().ToUpperInvariant();
+        BtnAceptar.IsEnabled = false;
+        LblError.Text = "";
     }
 
     // Uso: var dto = await PlacaResolverModalPage.ShowAsync(Navigation, placaActual);
@@ -97,4 +108,6 @@ public partial class PlacaResolverModalPage : ContentPage
         _tcs.TrySetResult(_dto);
         await Navigation.PopModalAsync();
     }
+
+
 }

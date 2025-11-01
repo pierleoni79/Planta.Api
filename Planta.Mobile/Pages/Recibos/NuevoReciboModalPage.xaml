@@ -1,94 +1,135 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<!-- Ruta: /Planta.Mobile/Pages/Recibos/NuevoReciboModalPage.xaml | V1.7.2-fix (toolkit:EventToCommandBehavior) -->
+<!-- Ruta: /Planta.Mobile/Pages/Recibos/NuevoReciboModalPage.xaml | V1.0 -->
 <ContentPage
     x:Class="Planta.Mobile.Pages.Recibos.NuevoReciboModalPage"
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-    xmlns:vm="clr-namespace:Planta.Mobile.ViewModels.Recibos"
     xmlns:toolkit="http://schemas.microsoft.com/dotnet/2022/maui/toolkit"
-    x:DataType="vm:NuevoReciboVM"
     Title="Nuevo Recibo">
 
-    <!-- Dispara carga de favoritos cuando la página aparece -->
-    <ContentPage.Behaviors>
-        <toolkit:EventToCommandBehavior
-            EventName="Appearing"
-            Command="{Binding CargarFavoritosCommand}" />
-    </ContentPage.Behaviors>
+    <!-- Layout con botón sticky -->
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Encabezado -->
+        <VerticalStackLayout Padding="16,12" Spacing="2">
+            <Label Text="Nuevo Recibo" FontSize="22" FontAttributes="Bold"/>
+            <Label x:Name="LblSubtitulo" Text="Origen: Cantera (planta de sesión)" FontSize="13" TextColor="{DynamicResource SecondaryTextColor}"/>
+        </VerticalStackLayout>
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto" ColumnDefinitions="*" Padding="16" RowSpacing="12">
+        <!-- Contenido desplazable -->
+        <ScrollView Grid.Row="1">
+            <VerticalStackLayout Padding="16" Spacing="18">
 
-        <!-- Banner favoritos (chips) -->
-        <CollectionView Grid.Row="0"
-                        ItemsSource="{Binding Favoritos}"
-                        HorizontalScrollBarVisibility="Never">
-            <CollectionView.ItemsLayout>
-                <LinearItemsLayout Orientation="Horizontal" ItemSpacing="6" />
-            </CollectionView.ItemsLayout>
-            <CollectionView.ItemTemplate>
-                <DataTemplate x:DataType="vm:VehiculoFavoritoVM">
-                    <Border Padding="8" StrokeThickness="1" Stroke="#DDD" Background="#FFF">
-                        <Border.StrokeShape>
-                            <RoundRectangle CornerRadius="12" />
-                        </Border.StrokeShape>
-                        <Grid ColumnDefinitions="Auto,Auto,Auto" ColumnSpacing="6">
-                            <Label Text="{Binding Placa}" FontAttributes="Bold"/>
-                            <Label Grid.Column="1" Text="{Binding ConductorNombre}" LineBreakMode="TailTruncation" />
-                            <Label Grid.Column="2" Text="{Binding Estrella}" />
-                        </Grid>
-                        <Border.GestureRecognizers>
-                            <!-- ✅ Usa el comando del item -->
-                            <TapGestureRecognizer
-                                Command="{Binding SeleccionarFavoritoCommand}"
-                                CommandParameter="{Binding .}" />
-                        </Border.GestureRecognizers>
-                    </Border>
-                </DataTemplate>
-            </CollectionView.ItemTemplate>
-        </CollectionView>
+                <!-- Sección A — Básicos -->
+                <Label Text="Sección A — Básicos" FontAttributes="Bold" />
 
-        <!-- Placa + Resolver -->
-        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <Entry Placeholder="PLACA" Text="{Binding Placa}" />
-            <Button Grid.Column="1" Text="Resolver" Command="{Binding ResolverPlacaCommand}" />
-        </Grid>
+                <!-- Placa -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Placa" />
+                    <Entry x:Name="TxtPlaca" Placeholder="Ej.: ABC123" Keyboard="Text" Completed="OnPlacaCompleted"/>
+                    <Label Text="Escribe la placa. Se resolverán vehículo y conductor automáticamente."
+                           FontSize="12" TextColor="{DynamicResource SecondaryTextColor}" />
+                    <Label x:Name="ErrPlaca" Text="" TextColor="Red" FontSize="12"/>
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <Label x:Name="LblVehiculoResumen" Text="Vehículo: —" />
+                        <Button Grid.Column="1" Text="Resolver" Clicked="OnResolverPlacaClicked"/>
+                    </Grid>
+                </VerticalStackLayout>
 
-        <!-- Form principal -->
-        <ScrollView Grid.Row="2">
-            <VerticalStackLayout Spacing="10">
-                <Label Text="{Binding PlacaInfo}" FontAttributes="Italic" />
+                <!-- Material -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Material" />
+                    <Picker x:Name="PickMaterial" Title="Selecciona material" ItemDisplayBinding="{Binding Nombre}" SelectedIndexChanged="OnMaterialChanged"/>
+                    <Label Text="Material a recibir." FontSize="12" TextColor="{DynamicResource SecondaryTextColor}" />
+                    <Label x:Name="ErrMaterial" Text="" TextColor="Red" FontSize="12"/>
+                </VerticalStackLayout>
 
-                <Picker Title="Destino" SelectedIndex="{Binding DestinoIndex}">
-                    <Picker.Items>
-                        <x:String>Planta</x:String>
-                        <x:String>Cliente</x:String>
-                    </Picker.Items>
-                </Picker>
+                <!-- Destino (chips) -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Destino" />
+                    <toolkit:SegmentedControl x:Name="SegDestino" SelectionChanged="OnDestinoChanged">
+                        <toolkit:SegmentedControl.Items>
+                            <toolkit:SegmentedControlItem Text="Cliente"/>
+                            <toolkit:SegmentedControlItem Text="Planta"/>
+                        </toolkit:SegmentedControl.Items>
+                    </toolkit:SegmentedControl>
+                    <Label Text="¿A dónde llega el material?"
+                           FontSize="12" TextColor="{DynamicResource SecondaryTextColor}" />
+                </VerticalStackLayout>
 
-                <Entry Placeholder="ClienteId (si aplica)" Keyboard="Numeric"
-                       IsVisible="{Binding EsDestinoCliente}"
-                       Text="{Binding ClienteId}" />
-                <Entry Placeholder="PlantaId (si aplica)" Keyboard="Numeric"
-                       IsVisible="{Binding EsDestinoPlanta}"
-                       Text="{Binding PlantaId}" />
+                <!-- Cantidad + Unidad (chips) -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Cantidad" />
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                        <Entry x:Name="TxtCantidad" Placeholder="0,000" Keyboard="Numeric" TextChanged="OnCantidadChanged"/>
+                        <toolkit:SegmentedControl Grid.Column="1" x:Name="SegUnidad" WidthRequest="160" SelectionChanged="OnUnidadChanged">
+                            <toolkit:SegmentedControl.Items>
+                                <toolkit:SegmentedControlItem Text="m³"/>
+                                <toolkit:SegmentedControlItem Text="viaje"/>
+                            </toolkit:SegmentedControl.Items>
+                        </toolkit:SegmentedControl>
+                    </Grid>
+                    <Label x:Name="LblAyudaCantidad" Text="—" FontSize="12" TextColor="{DynamicResource SecondaryTextColor}" />
+                    <Label x:Name="ErrCantidad" Text="" TextColor="Red" FontSize="12"/>
+                    <Label x:Name="ErrUnidad" Text="" TextColor="Red" FontSize="12"/>
+                </VerticalStackLayout>
 
-                <Entry Placeholder="MaterialId" Keyboard="Numeric" Text="{Binding MaterialId}" />
+                <!-- Observaciones -->
+                <VerticalStackLayout Spacing="6">
+                    <Label Text="Observaciones (opcional)" />
+                    <Editor x:Name="TxtObs" Placeholder="Escribe una nota (opcional)" AutoSize="TextChanges" />
+                </VerticalStackLayout>
 
+                <!-- Sección B — Destino (condicional) -->
+                <Label Text="Sección B — Destino" FontAttributes="Bold" />
+
+                <!-- Cliente -->
+                <VerticalStackLayout x:Name="SecCliente" Spacing="6" IsVisible="True">
+                    <Label Text="Cliente" />
+                    <Picker x:Name="PickCliente" Title="Selecciona cliente" ItemDisplayBinding="{Binding Nombre}" />
+                    <Label x:Name="ErrCliente" Text="" TextColor="Red" FontSize="12"/>
+                </VerticalStackLayout>
+
+                <!-- Planta destino -->
+                <VerticalStackLayout x:Name="SecPlanta" Spacing="6" IsVisible="False">
+                    <Label Text="Planta destino" />
+                    <Picker x:Name="PickPlanta" Title="Selecciona planta" ItemDisplayBinding="{Binding Nombre}" />
+                    <Label x:Name="ErrPlantaDestino" Text="" TextColor="Red" FontSize="12"/>
+                </VerticalStackLayout>
+
+                <!-- Sección C — Derivados / Solo lectura -->
+                <Label Text="Sección C — Derivados / Solo lectura" FontAttributes="Bold" />
+
+                <!-- Vehículo -->
+                <VerticalStackLayout Spacing="2">
+                    <Label x:Name="LblVehiculoClaseCap" Text="Clase: — · Capacidad: — m³" />
+                </VerticalStackLayout>
+
+                <!-- Conductor -->
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
-                    <Entry Placeholder="Unidad (m3/ton)"
-                           Text="{Binding Unidad}"
-                           IsEnabled="{Binding UnidadHabilitada}" />
-                    <Entry Grid.Column="1" Placeholder="Cantidad" Keyboard="Numeric" Text="{Binding Cantidad}" />
+                    <VerticalStackLayout Spacing="2">
+                        <Label x:Name="LblConductor" Text="Conductor: —" />
+                        <Label x:Name="LblConductorFuente" Text="—" FontSize="12" TextColor="{DynamicResource SecondaryTextColor}" />
+                        <Label x:Name="AlertaConductor" Text="" TextColor="OrangeRed" FontSize="12"/>
+                    </VerticalStackLayout>
+                    <Button Grid.Column="1" Text="Cambiar" Clicked="OnCambiarConductor"/>
                 </Grid>
 
-                <Button Text="Calcular Tarifa" Command="{Binding CalcularTarifaCommand}" />
-                <Label Text="{Binding TarifaInfo}" />
+                <!-- Unidad/Cantidad (origen de la regla) -->
+                <Label x:Name="LblOrigenUnidad" Text="Sin tarifa: captura manual." FontSize="12" TextColor="{DynamicResource SecondaryTextColor}" />
+
+                <!-- Almacén origen -->
+                <Label x:Name="LblAlmacen" Text="Almacén origen: Cantera – —" />
+
             </VerticalStackLayout>
         </ScrollView>
 
-        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="8">
-            <Button Text="Crear" Command="{Binding CrearCommand}" />
-            <Button Grid.Column="1" Text="Cerrar" Command="{Binding CerrarCommand}" />
-        </Grid>
+        <!-- Botón sticky -->
+        <Border Grid.Row="2" StrokeThickness="0" BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#1e1e1e}">
+            <VerticalStackLayout Padding="16" Spacing="8">
+                <Button x:Name="BtnCrear" Text="Crear Recibo" Clicked="OnCrear" IsEnabled="False"/>
+                <Label x:Name="LblChecklist" Text="• Placa válida • Material • Destino • Unidad • Cantidad > 0 • Conexión disponible"
+                       FontSize="12" TextColor="{DynamicResource SecondaryTextColor}" />
+            </VerticalStackLayout>
+        </Border>
     </Grid>
 </ContentPage>
