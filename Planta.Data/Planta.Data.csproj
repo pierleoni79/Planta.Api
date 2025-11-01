@@ -1,26 +1,24 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<!-- Ruta: /Planta.Data/Planta.Data.csproj | V1.2 -->
+<!-- Ruta: /Planta.Data/Planta.Data.csproj | V1.0 -->
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<TargetFramework>net8.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
+		<AssemblyName>Planta.Data</AssemblyName>
+		<RootNamespace>Planta.Data</RootNamespace>
 	</PropertyGroup>
 
 	<ItemGroup>
-		<!-- EF Core base -->
-		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.21" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.21" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.21" />
-		<!-- Opcional para migraciones desde este proyecto:
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="8.0.*" PrivateAssets="All" /> -->
+		<ProjectReference Include="..\Planta.Domain\Planta.Domain.csproj" />
+		<ProjectReference Include="..\Planta.Contracts\Planta.Contracts.csproj" />
+		<ProjectReference Include="..\Planta.Application\Planta.Application.csproj" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<!-- Data depende de Domain para las entidades -->
-		<ProjectReference Include="..\Planta.Domain\Planta.Domain.csproj" />
-		<!-- 🔧 NUEVO: Data necesita ver la interfaz IPlantaDbContext que está en Application -->
-		<ProjectReference Include="..\Planta.Application\Planta.Application.csproj" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.21" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.21" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.21" />
 	</ItemGroup>
 </Project>

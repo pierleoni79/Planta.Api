@@ -1,52 +1,32 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Ruta: /Planta.Api/Planta.Api.csproj | V1.6 -->
 <Project Sdk="Microsoft.NET.Sdk.Web">
 	<PropertyGroup>
 		<TargetFramework>net8.0</TargetFramework>
-		<Nullable>enable</Nullable>
 		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
-
-		<!-- Dev quality-of-life -->
+		<AssemblyName>Planta.Api</AssemblyName>
+		<RootNamespace>Planta.Api</RootNamespace>
 		<GenerateDocumentationFile>true</GenerateDocumentationFile>
-		<NoWarn>$(NoWarn);1591</NoWarn>
+		<NoWarn>1591</NoWarn>
 	</PropertyGroup>
-
-	<!-- Secrets SOLO en Debug -->
-	<PropertyGroup Condition="'$(Configuration)'=='Debug'">
-		<UserSecretsId>Planta.Api-Dev-Secrets</UserSecretsId>
-	</PropertyGroup>
+	<ItemGroup>
+	  <Content Include="Properties\launchSettings.json" />
+	</ItemGroup>
 
 	<ItemGroup>
-		<!-- Swagger para explorar la API -->
-		<PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.8" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.21" />
-		<PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="8.0.21" />
+		<!-- Swagger -->
 		<PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
-
-		<!-- EF Core (proveedor SQL Server para UseSqlServer) -->
-		<PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="8.0.21" />
-
-		<!-- Opciones/binding desde appsettings -->
-		<PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="8.0.0" />
+		<!-- API Versioning (MSFT official) -->
+		<PackageReference Include="Asp.Versioning.Mvc" Version="7.1.0" />
+		<PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="7.1.0" />
 	</ItemGroup>
 
 	<ItemGroup>
-		<!-- Núcleo de la app -->
-		<ProjectReference Include="..\Planta.Contracts\Planta.Contracts.csproj" />
+		<!-- OJO: rutas a proyectos hermanos (sin carpeta repetida) -->
 		<ProjectReference Include="..\Planta.Application\Planta.Application.csproj" />
-		<ProjectReference Include="..\Planta.Infrastructure\Planta.Infrastructure.csproj" />
-
-		<!-- DbContext y configuraciones EF -->
 		<ProjectReference Include="..\Planta.Data\Planta.Data.csproj" />
+		<ProjectReference Include="..\Planta.Infrastructure\Planta.Infrastructure.csproj" />
+		<ProjectReference Include="..\Planta.Contracts\Planta.Contracts.csproj" />
+		<ProjectReference Include="..\Planta.Domain\Planta.Domain.csproj" />
 	</ItemGroup>
-
-	<!-- Módulo de reportes (descomenta solo si EXISTEN en tu solución) -->
-	<!--
-  <ItemGroup>
-    <ProjectReference Include="..\Planta.Reportes.Application\Planta.Reportes.Application.csproj" />
-    <ProjectReference Include="..\Planta.Reportes.Infrastructure\Planta.Reportes.Infrastructure.csproj" />
-    <ProjectReference Include="..\Planta.Reportes.Domain\Planta.Reportes.Domain.csproj" />
-  </ItemGroup>
-  -->
 </Project>

@@ -1,16 +1,14 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<!-- Ruta: /Planta.Domain/Planta.Domain.csproj | V1.0 -->
+<!-- Ruta: /Planta.Domain/Planta.Domain.csproj | V1.3 -->
 <Project Sdk="Microsoft.NET.Sdk">
 	<PropertyGroup>
 		<TargetFramework>net8.0</TargetFramework>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
-		<!-- Opcional: calidad -->
-		<!-- <TreatWarningsAsErrors>true</TreatWarningsAsErrors> -->
+		<AssemblyName>Planta.Domain</AssemblyName>
+		<RootNamespace>Planta.Domain</RootNamespace>
+		<EnableDefaultItems>true</EnableDefaultItems>
+		<EnableDefaultCompileItems>true</EnableDefaultCompileItems>
 	</PropertyGroup>
-	<ItemGroup>
-	  <Folder Include="Operaciones\" />
-	</ItemGroup>
-	<!-- Sin PackageReference: Domain no depende de EF/SQL -->
 </Project>

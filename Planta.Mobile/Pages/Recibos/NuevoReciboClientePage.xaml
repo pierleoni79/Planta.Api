@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ruta: /Planta.Mobile/Pages/Recibos/NuevoReciboClientePage.xaml | V1.6 -->
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:Planta.Mobile.ViewModels"
+    xmlns:crm="clr-namespace:Planta.Contracts.CRM;assembly=Planta.Contracts"
+    x:Class="Planta.Mobile.Pages.Recibos.NuevoReciboClientePage"
+    x:DataType="vm:NuevoReciboClienteVM"
+    Title="Nuevo (Cliente)">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="12">
+
+            <Label Text="Cliente" />
+            <Picker ItemsSource="{Binding Clientes}"
+              ItemDisplayBinding="{Binding Nombre}"
+              SelectedItem="{Binding SelectedCliente}" />
+
+            <Label Text="Placa" />
+            <Entry Text="{Binding Form.Placa}" Placeholder="ABC123" />
+
+            <Label Text="Cantidad" />
+            <Entry Keyboard="Numeric" Text="{Binding Form.Cantidad}" />
+
+            <Label Text="Unidad" />
+            <Picker ItemsSource="{Binding Unidades}"
+              SelectedItem="{Binding Form.Unidad}" />
+
+            <Button Text="Crear Recibo" Command="{Binding CrearCmd}" />
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

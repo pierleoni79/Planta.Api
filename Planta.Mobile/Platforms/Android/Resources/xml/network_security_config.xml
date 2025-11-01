@@ -1,0 +1,22 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- Ruta: /Planta.Mobile/Platforms/Android/Resources/xml/network_security_config.xml -->
+<network-security-config>
+	<!-- Por defecto NO cleartext -->
+	<base-config cleartextTrafficPermitted="false">
+		<trust-anchors>
+			<certificates src="system" />
+		</trust-anchors>
+	</base-config>
+
+	<!-- Permitir HTTP únicamente al host de la PC visto desde AVD -->
+	<domain-config cleartextTrafficPermitted="true">
+		<domain includeSubdomains="false">10.0.2.2</domain>
+	</domain-config>
+
+	<!-- (Opcional) en debug, confiar user certs si algún día pruebas HTTPS dev -->
+	<debug-overrides>
+		<trust-anchors>
+			<certificates src="user" />
+		</trust-anchors>
+	</debug-overrides>
+</network-security-config>

@@ -1,9 +1,23 @@
 <?xml version="1.0" encoding="UTF-8" ?>
+<!-- Ruta: /Planta.Mobile/AppShell.xaml | V1.0 -->
 <Shell xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
        xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
-       xmlns:pages="clr-namespace:Planta.Mobile.Pages.Recibos"
+       xmlns:transito="clr-namespace:Planta.Mobile.Pages.Transito"
+       xmlns:recibos="clr-namespace:Planta.Mobile.Pages.Recibos"
+       xmlns:perfil="clr-namespace:Planta.Mobile.Pages.Perfil"
+       xmlns:settings="clr-namespace:Planta.Mobile.Pages.Settings"
        x:Class="Planta.Mobile.AppShell">
-    <ShellContent Route="recibos" ContentTemplate="{DataTemplate pages:RecibosListaPage}" />
-    <ShellContent Route="recibo/detalle" ContentTemplate="{DataTemplate pages:ReciboDetallePage}" />
-    <ShellContent Route="ajustes" ContentTemplate="{DataTemplate pages:AjustesPage}" />
+    <TabBar>
+        <Tab Title="Recibo">
+            <ShellContent Title="Cliente" ContentTemplate="{DataTemplate recibos:NuevoReciboClientePage}" />
+            <ShellContent Title="Planta"  ContentTemplate="{DataTemplate recibos:NuevoReciboPlantaPage}" />
+        </Tab>
+        <Tab Title="En tr�nsito">
+            <ShellContent Title="Listado" ContentTemplate="{DataTemplate transito:TransitoPage}" />
+        </Tab>
+        <Tab Title="Perfil">
+            <ShellContent Title="Favoritos" ContentTemplate="{DataTemplate perfil:FavoritosPage}" />
+            <ShellContent Title="Ajustes"   ContentTemplate="{DataTemplate settings:ConfiguracionPage}" />
+        </Tab>
+    </TabBar>
 </Shell>

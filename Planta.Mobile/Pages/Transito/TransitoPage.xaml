@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ruta: /Planta.Mobile/Pages/Transito/TransitoPage.xaml | V1.2 -->
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:Planta.Mobile.ViewModels"
+    xmlns:recibos="clr-namespace:Planta.Contracts.Recibos;assembly=Planta.Contracts"
+    x:Class="Planta.Mobile.Pages.Transito.TransitoPage"
+    x:DataType="vm:TransitoVM"
+    Title="En tr�nsito">
+
+    <VerticalStackLayout Padding="16" Spacing="8">
+        <Button Text="Refrescar" Command="{Binding RefreshCmd}" />
+
+        <CollectionView ItemsSource="{Binding Items}">
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="recibos:ReciboListItemDto">
+                    <Frame Padding="10" Margin="0,6" HasShadow="True">
+                        <VerticalStackLayout>
+                            <Label Text="{Binding PlacaSnapshot}" FontAttributes="Bold"/>
+                            <Label Text="{Binding ConductorNombreSnapshot}" />
+                            <Label Text="{Binding Cantidad, StringFormat='Cantidad: {0:N2}'}" />
+                            <Label Text="{Binding Estado}" />
+                            <Label Text="{Binding FechaCreacionUtc, StringFormat='{}{0:yyyy-MM-dd HH:mm}'}" FontSize="12"/>
+                        </VerticalStackLayout>
+                    </Frame>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </VerticalStackLayout>
+</ContentPage>

@@ -1,25 +1,29 @@
-﻿// Ruta: /Planta.Mobile/App.xaml.cs | V1.1 (fix .NET 9: sin InitializeComponent, usa CreateWindow)
-#nullable enable
+﻿// Ruta: /Planta.Mobile/App.xaml.cs | V1.2-fix (DI en App + Shell con SP + listo para modal de inicio)
+using System;
 using Microsoft.Maui;
 using Microsoft.Maui.Controls;
 
-namespace Planta.Mobile
-{
-    public partial class App : Application
-    {
-        public App()
-        {
-            // Si realmente usas recursos en App.xaml y su Build Action = MauiXaml,
-            // puedes descomentar la siguiente línea. Si no, déjala comentada.
-            // InitializeComponent();
-        }
+namespace Planta.Mobile;
 
-        protected override Window CreateWindow(IActivationState? activationState)
+public partial class App : Application
+{
+    private readonly IServiceProvider _sp;
+
+    public App(IServiceProvider sp)
+    {
+        InitializeComponent();
+        _sp = sp;
+        // ❌ No establezcas MainPage aquí; la creamos en CreateWindow.
+    }
+
+    // Punto de entrada UI (single-window). Inyecta el ServiceProvider al AppShell.
+    protected override Window CreateWindow(IActivationState? activationState)
+    {
+        var shell = new AppShell(_sp); // ← AppShell debe tener ctor(AppShell(IServiceProvider sp))
+        var window = new Window(shell)
         {
-            // Si prefieres resolver por DI:
-            // var shell = ServiceHelper.GetRequiredService<AppShell>();
-            var shell = new AppShell();
-            return new Window(shell);
-        }
+            Title = "Caliza - Operario"
+        };
+        return window;
     }
 }

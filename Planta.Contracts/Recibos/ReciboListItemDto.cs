@@ -1,21 +1,19 @@
 ﻿// Ruta: /Planta.Contracts/Recibos/ReciboListItemDto.cs | V1.1
 #nullable enable
-using System;
+using Planta.Contracts.Enums;
 
 namespace Planta.Contracts.Recibos;
 
-public sealed class ReciboListItemDto
-{
-    public Guid Id { get; set; }
-    public int EmpresaId { get; set; }
-    public int Consecutivo { get; set; }
-    public DateTimeOffset FechaCreacion { get; set; }
-    public ReciboEstado Estado { get; set; }
-    public int VehiculoId { get; set; }
-
-    public string? Placa { get; set; }        // <- de PlacaSnapshot
-    public string? Conductor { get; set; }    // <- de ConductorNombreSnapshot  (NUEVO)
-
-    public int? ClienteId { get; set; }
-    public decimal Cantidad { get; set; }
-}
+/// <summary>Item liviano para listados/paginación.</summary>
+public sealed record ReciboListItemDto(
+    Guid Id,
+    int EmpresaId,
+    ReciboEstado Estado,
+    DestinoTipo DestinoTipo,
+    decimal Cantidad,
+    string? PlacaSnapshot,
+    string? ConductorNombreSnapshot,
+    string? NumeroGenerado,
+    DateTime FechaCreacionUtc,
+    string ETag
+);

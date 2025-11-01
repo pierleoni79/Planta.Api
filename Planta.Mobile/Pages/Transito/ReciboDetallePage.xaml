@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ruta: /Planta.Mobile/Pages/Transito/ReciboDetallePage.xaml | V1.2 -->
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:Planta.Mobile.ViewModels"
+    x:Class="Planta.Mobile.Pages.Transito.ReciboDetallePage"
+    x:DataType="vm:ReciboDetalleVM"
+    Title="Detalle">
+
+    <ScrollView>
+        <VerticalStackLayout Padding="16" Spacing="8">
+            <Label Text="{Binding Recibo.PlacaSnapshot}" FontAttributes="Bold" />
+            <Label Text="{Binding Recibo.ConductorNombreSnapshot}" />
+            <Label Text="{Binding Recibo.Estado}" />
+            <Label Text="{Binding Recibo.Cantidad, StringFormat='Cantidad: {0:N2}'}" />
+            <Label Text="{Binding Recibo.ETag, StringFormat='ETag: {0}'}" FontSize="12"/>
+        </VerticalStackLayout>
+    </ScrollView>
+</ContentPage>

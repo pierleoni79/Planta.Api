@@ -1,52 +1,49 @@
-﻿// Ruta: /Planta.Data/Configurations/ReciboEstadoLogConfig.cs | V1.2
+﻿// Ruta: /Planta.Data/Configurations/ReciboEstadoLogConfig.cs | V1.1 (alineado a BD)
 #nullable enable
+namespace Planta.Data.Configurations;
+
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
-using Planta.Data.Entities;
-
-namespace Planta.Data.Configurations;
+using Planta.Domain.Recibos;
 
 public sealed class ReciboEstadoLogConfig : IEntityTypeConfiguration<ReciboEstadoLog>
 {
     public void Configure(EntityTypeBuilder<ReciboEstadoLog> b)
     {
         // Tabla real
-        b.ToTable("ReciboEstadoLog", "op");
-
-        // PK (bigint IDENTITY)
+        b.ToTable("ReciboEstadoLog", schema: "op");
         b.HasKey(x => x.Id);
+
+        // Columnas
         b.Property(x => x.Id)
+            .HasColumnName("Id")
             .ValueGeneratedOnAdd();
 
-        // Campos
-        b.Property(x => x.ReciboId).IsRequired();
+        b.Property(x => x.ReciboId)
+            .HasColumnName("ReciboId");
 
+        // tinyint en BD
         b.Property(x => x.Estado)
-            .HasColumnType("tinyint")
-            .IsRequired();
+            .HasColumnName("Estado")
+            .HasConversion<byte>();
 
+        // datetimeoffset NOT NULL
         b.Property(x => x.Cuando)
-            .HasDefaultValueSql("sysdatetimeoffset()")
-            .ValueGeneratedOnAdd()
+            .HasColumnName("Cuando")
             .IsRequired();
 
+        // nvarchar(256) / nvarchar(64) NULL
         b.Property(x => x.Nota)
-            .HasMaxLength(512)
-            .IsRequired(false);
+            .HasColumnName("Nota")
+            .HasMaxLength(256);
 
-        b.Property(x => x.GPS)
-            .HasMaxLength(128)
-            .IsRequired(false);
+        b.Property(x => x.Gps)
+            .HasColumnName("GPS")
+            .HasMaxLength(64);
 
-        // FK explícita a op.Recibo SIN cascada (preserva historial)
-        b.HasOne<Recibo>()
-            .WithMany() // si luego agregas navegación en Recibo, cámbialo aquí
-            .HasForeignKey(x => x.ReciboId)
-            .OnDelete(DeleteBehavior.NoAction)
-            .HasConstraintName("FK_ReciboEstadoLog_Recibo");
-
-        // Índice por Recibo y orden temporal
-        b.HasIndex(x => new { x.ReciboId, x.Cuando })
-         .HasDatabaseName("IX_ReciboEstadoLog_Recibo_Cuando");
+        // Índices útiles
+        b.HasIndex(x => x.ReciboId);
+        b.HasIndex(x => x.Estado);
+        b.HasIndex(x => x.Cuando);
     }
 }

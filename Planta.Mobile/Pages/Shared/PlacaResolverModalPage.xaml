@@ -1,0 +1,40 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<!-- Ruta: /Planta.Mobile/Pages/Shared/PlacaResolverModalPage.xaml | V1.1-fix (.NET 9: Frame→Border) -->
+<ContentPage
+    x:Class="Planta.Mobile.Pages.Shared.PlacaResolverModalPage"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    Title="Resolver Placa"
+    Padding="16">
+
+    <VerticalStackLayout Spacing="12">
+        <Label Text="Placa" />
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <Entry x:Name="TxtPlaca" Placeholder="Ej.: ABC123" />
+            <Button Grid.Column="1" Text="Resolver" Clicked="OnResolverClicked" />
+        </Grid>
+
+        <!-- resultado -->
+        <Border Padding="10"
+                Background="#FAFAFA"
+                Stroke="#E0E0E0"
+                StrokeThickness="1">
+            <Border.StrokeShape>
+                <RoundRectangle CornerRadius="8" />
+            </Border.StrokeShape>
+            <VerticalStackLayout Spacing="4">
+                <Label x:Name="LblEstado" Text="—" FontAttributes="Bold" />
+                <Label x:Name="LblClase"  Text="Clase: —" />
+                <Label x:Name="LblCap"    Text="Capacidad: — m³" />
+                <Label x:Name="LblCond"   Text="Conductor: —" />
+                <Label x:Name="LblFuente" Text="Fuente: —" FontSize="12" TextColor="#666666" />
+                <Label x:Name="LblError"  Text="" TextColor="#c62828" />
+            </VerticalStackLayout>
+        </Border>
+
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <Button Text="Cancelar" Clicked="OnCancelar" />
+            <Button Grid.Column="1" x:Name="BtnAceptar" Text="Aceptar" Clicked="OnAceptar" IsEnabled="False" />
+        </Grid>
+    </VerticalStackLayout>
+</ContentPage>

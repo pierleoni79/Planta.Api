@@ -1,16 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Ruta: /Planta.Mobile/Planta.Mobile.csproj | Patch V1.3 (desactiva Pickers) -->
+<!-- Ruta: /Planta.Mobile/Planta.Mobile.csproj | Patch V1.7 -->
 <Project Sdk="Microsoft.NET.Sdk">
+
 	<PropertyGroup>
 		<!-- MAUI / Target -->
-		<TargetFrameworks>net9.0-android</TargetFrameworks>
+		<TargetFramework>net9.0-android</TargetFramework>
 		<OutputType>Exe</OutputType>
 		<UseMaui>true</UseMaui>
 		<SingleProject>true</SingleProject>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
+		<LangVersion>latest</LangVersion>
 
-		<!-- Compilación XAML (InitializeComponent + compiled bindings) -->
+		<!-- Compilación XAML -->
 		<MauiXamlCompilation>Compile</MauiXamlCompilation>
 		<MauiEnableXamlCBindingWithSourceCompilation>true</MauiEnableXamlCBindingWithSourceCompilation>
 
@@ -23,8 +25,9 @@
 
 		<!-- Android -->
 		<AndroidUseLatestPlatformSdk>true</AndroidUseLatestPlatformSdk>
-		<SupportedOSPlatformVersion>21.0</SupportedOSPlatformVersion>
-		<!-- <AndroidCleartextTrafficPermitted>true</AndroidCleartextTrafficPermitted> -->
+		<AndroidMinSdkVersion>21</AndroidMinSdkVersion>
+		<!-- HTTP en DEV (útil con 10.0.2.2:5122) -->
+		<AndroidCleartextTrafficPermitted>true</AndroidCleartextTrafficPermitted>
 
 		<!-- Diagnóstico XAML -->
 		<GenerateFullPaths>true</GenerateFullPaths>
@@ -32,17 +35,20 @@
 
 		<!-- Evita MA002 si ya referenciamos paquetes explícitos -->
 		<SkipValidateMauiImplicitPackageReferences>true</SkipValidateMauiImplicitPackageReferences>
+
+		<!-- Flag para desactivar los pickers legacy sin borrar archivos -->
+		<DisableLegacyPickers>true</DisableLegacyPickers>
+
+		<!-- Opcional: silencia el warning XC0022 (Picker con ItemDisplayBinding) -->
+		<NoWarn>$(NoWarn);XC0022</NoWarn>
 	</PropertyGroup>
 
-	<!-- Recursos MAUI -->
-
-	<!-- Paquetes (alineados a MAUI 9 / .NET 9) -->
+	<!-- Paquetes (MAUI .NET 9). NO referencies Microsoft.Maui.Controls manualmente -->
 	<ItemGroup>
 		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-		<PackageReference Include="Microsoft.Maui.Controls" Version="9.0.82" />
-		<PackageReference Include="CommunityToolkit.Maui" Version="9.0.0" />
-		<PackageReference Include="Microsoft.Extensions.Http" Version="9.0.5" />
-		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.5" />
+		<PackageReference Include="CommunityToolkit.Maui" Version="12.2.0" />
+		<PackageReference Include="Microsoft.Extensions.Http" Version="9.0.10" />
+		<PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="9.0.10" />
 	</ItemGroup>
 
 	<!-- Referencias de proyecto -->
@@ -50,27 +56,59 @@
 		<ProjectReference Include="..\Planta.Contracts\Planta.Contracts.csproj" />
 	</ItemGroup>
 
-	<!-- Compilación XAML explícita (corrige rutas y asegura codegen) -->
-
-	<!-- ⚠️ Desactivar Pickers antiguos para que no compilen -->
+	<!-- Compilación XAML explícita -->
 	<ItemGroup>
-		<None Include="Views\Pickers\ConductorPickerPage.xaml" />
-		<None Include="Views\Pickers\VehiculoPickerPage.xaml" />
-	</ItemGroup>
-	<ItemGroup>
-	  <MauiXaml Update="AppShell.xaml">
-	    <Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Pages\Recibos\AjustesPage.xaml">
-	    <Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Pages\Recibos\ReciboDetallePage.xaml">
-	    <Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
-	  <MauiXaml Update="Pages\Recibos\RecibosListaPage.xaml">
-	    <Generator>MSBuild:Compile</Generator>
-	  </MauiXaml>
+		<MauiXaml Update="App.xaml">
+			<Generator>MSBuild:Compile</Generator>
+		</MauiXaml>
+		<MauiXaml Update="AppShell.xaml">
+			<Generator>MSBuild:Compile</Generator>
+		</MauiXaml>
+		<MauiXaml Update="Pages\Perfil\FavoritosPage.xaml">
+			<Generator>MSBuild:Compile</Generator>
+		</MauiXaml>
+		<MauiXaml Update="Pages\Recibos\NuevoReciboClientePage.xaml">
+			<Generator>MSBuild:Compile</Generator>
+		</MauiXaml>
+		<MauiXaml Update="Pages\Recibos\NuevoReciboModalPage.xaml">
+		  <Generator>MSBuild:Compile</Generator>
+		</MauiXaml>
+		<MauiXaml Update="Pages\Recibos\NuevoReciboPlantaPage.xaml">
+			<Generator>MSBuild:Compile</Generator>
+		</MauiXaml>
+		<MauiXaml Update="Pages\Settings\ConfiguracionPage.xaml">
+			<Generator>MSBuild:Compile</Generator>
+		</MauiXaml>
+		<MauiXaml Update="Pages\Shared\PlacaResolverModalPage.xaml">
+		  <Generator>MSBuild:Compile</Generator>
+		</MauiXaml>
+		<MauiXaml Update="Pages\Transito\ReciboDetallePage.xaml">
+			<Generator>MSBuild:Compile</Generator>
+		</MauiXaml>
+		<MauiXaml Update="Pages\Transito\TransitoPage.xaml">
+			<Generator>MSBuild:Compile</Generator>
+		</MauiXaml>
 	</ItemGroup>
 
-	<!-- appsettings.mobile.json como asset del paquete -->
+	<!-- Desactivar por completo los Pickers legacy -->
+	<ItemGroup Condition="'$(DisableLegacyPickers)'=='true'">
+		<MauiXaml Remove="Views\Pickers\**\*.xaml" />
+		<Compile Remove="Views\Pickers\**\*.xaml.cs" />
+		<None Include="Views\Pickers\**\*.xaml" />
+		<None Include="Views\Pickers\**\*.xaml.cs" />
+	</ItemGroup>
+
+	<!-- Recursos adicionales -->
+	<ItemGroup>
+		<!-- appsettings móvil (solo si existe) -->
+		<MauiAsset Include="appsettings.mobile.json" LogicalName="appsettings.mobile.json" Condition="Exists('appsettings.mobile.json')" />
+		<!-- (opcional) assets raw -->
+		<MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
+	</ItemGroup>
+
+	<!-- Asegurar que el network_security_config se incluya como recurso Android -->
+	<ItemGroup>
+		<AndroidResource Include="Platforms\Android\Resources\xml\network_security_config.xml" Condition="Exists('Platforms\Android\Resources\xml\network_security_config.xml')" />
+	</ItemGroup>
+
 </Project>

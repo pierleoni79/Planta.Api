@@ -1,0 +1,12 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- Ruta: /Planta.Mobile/Platforms/Android/AndroidManifest.xml | V2.0 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          package="com.jr.caliza.operario">
+
+  <!-- Permisos -->
+  <uses-permission android:name="android.permission.INTERNET" />
+
+  <application
+      android:usesCleartextTraffic="true"
+      android:networkSecurityConfig="@xml/network_security_config" />
+</manifest>

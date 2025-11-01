@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Ruta: /Planta.Mobile/Pages/Settings/ConfiguracionPage.xaml | V1.0 -->
+<ContentPage
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:vm="clr-namespace:Planta.Mobile.ViewModels"
+    x:Class="Planta.Mobile.Pages.Settings.ConfiguracionPage"
+    x:DataType="vm:ConfiguracionVM"
+    Title="Configuraci�n">
+
+    <VerticalStackLayout Padding="16" Spacing="12">
+        <Label Text="Base URL de la API" />
+        <Entry Text="{Binding BaseUrl}" Placeholder="https://servidor:puerto" />
+    </VerticalStackLayout>
+</ContentPage>

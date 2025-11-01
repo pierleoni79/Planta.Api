@@ -1,178 +1,112 @@
-﻿// Ruta: /Planta.Api/Program.cs | V1.18
-using System;
-using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using System.Threading.Tasks;
-using FluentValidation;
-using MediatR;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.Http;
+﻿// Ruta: /Planta.Api/Program.cs | V1.8-fix (AddPlantaData + ReadStore + repo transporte)
+#nullable enable
+using Asp.Versioning;
+using Asp.Versioning.ApiExplorer;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Options;
-using Planta.Api.Health;
-using Planta.Api.Middlewares;
-using Planta.Application;                 // AssemblyMarker (scan MediatR/FluentValidation)
-using Planta.Application.Abstractions;    // IPlantaDbContext
-using Planta.Data.Context;                // DbContexts reales
-using Planta.Infrastructure.Options;
-// Repos/Servicios
-using Planta.Infrastructure.Repositories;
-using Planta.Infrastructure.Services;
+using Microsoft.OpenApi.Models;
+using Planta.Application;
+using Planta.Infrastructure;
+using Planta.Data.ReadStores;                         // ✅ ReadStore
+using Planta.Application.Transporte.Abstractions;    // ✅ ITransporteRepository
+using Planta.Data.Repositories;                      // ✅ TransporteRepository
 
 var builder = WebApplication.CreateBuilder(args);
+var config = builder.Configuration;
 
-// 1) Opciones (desde configuración)
-builder.Services.Configure<ConnectionStringsOptions>(builder.Configuration.GetSection("ConnectionStrings"));
-builder.Services.Configure<StartupOptions>(builder.Configuration.GetSection("Startup"));
-builder.Services.Configure<RecibosOptions>(builder.Configuration.GetSection("Recibos"));
-
-// 2) DbContexts (PlantaDbContext principal)
-builder.Services.AddDbContext<PlantaDbContext>(options =>
+// 1) CORS
+var origins = config.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+builder.Services.AddCors(o => o.AddPolicy("default", p =>
 {
-    var conn = builder.Configuration.GetConnectionString("PlantaDb");
-    if (string.IsNullOrWhiteSpace(conn))
-        throw new InvalidOperationException("Falta ConnectionStrings:PlantaDb (usar User Secrets/Variables).");
+    if (origins.Length == 0)
+        p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+    else
+        p.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+}));
 
-    options.UseSqlServer(conn, sql =>
+// 2) MVC + Versionado
+builder.Services.AddControllers();
+builder.Services
+    .AddApiVersioning(opts =>
     {
-        // Resiliencia de conexión (seguro para producción/dev)
-        sql.EnableRetryOnFailure(
-            maxRetryCount: 5,
-            maxRetryDelay: TimeSpan.FromSeconds(10),
-            errorNumbersToAdd: null);
-    });
-});
-
-// Factory de SOLO LECTURA (usada por servicios de catálogos/consultas)
-builder.Services.AddDbContextFactory<TransporteReadDbContext>(options =>
-{
-    var conn = builder.Configuration.GetConnectionString("PlantaDb");
-    if (string.IsNullOrWhiteSpace(conn))
-        throw new InvalidOperationException("Falta ConnectionStrings:PlantaDb (usar User Secrets/Variables).");
-
-    options.UseSqlServer(conn, sql =>
+        opts.AssumeDefaultVersionWhenUnspecified = true;
+        opts.DefaultApiVersion = new ApiVersion(1, 0);
+        opts.ReportApiVersions = true;
+    })
+    .AddApiExplorer(opts =>
     {
-        sql.EnableRetryOnFailure(5, TimeSpan.FromSeconds(10), null);
+        opts.GroupNameFormat = "'v'VVV";
+        opts.SubstituteApiVersionInUrl = true;
     });
-    options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
-});
 
-// ✅ Bridge para handlers MediatR que dependen de IPlantaDbContext
-//    (Asegúrate de que PlantaDbContext implemente IPlantaDbContext)
-builder.Services.AddScoped<IPlantaDbContext>(sp =>
-{
-    var db = sp.GetRequiredService<PlantaDbContext>();
-    if (db is IPlantaDbContext ctx) return ctx;
-    throw new InvalidOperationException("PlantaDbContext debe implementar IPlantaDbContext.");
-});
-
-// 3) MediatR + FluentValidation (escanea Planta.Application)
-builder.Services.AddMediatR(cfg =>
-    cfg.RegisterServicesFromAssembly(typeof(AssemblyMarker).Assembly));
-builder.Services.AddValidatorsFromAssembly(typeof(AssemblyMarker).Assembly);
-
-// 4) Servicios de API
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddControllers().AddJsonOptions(o =>
-{
-    o.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-    o.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
-    o.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-});
-
+// 3) Swagger
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-
-// 5) CORS simple (ajústalo a tu dominio)
-builder.Services.AddCors(opt =>
+builder.Services.AddSwaggerGen(c =>
 {
-    opt.AddPolicy("Default", p => p
-        .AllowAnyOrigin()
-        .AllowAnyHeader()
-        .AllowAnyMethod());
+    var title = config["Swagger:Title"] ?? "Planta API";
+    var desc = config["Swagger:Description"] ?? "";
+    c.SwaggerDoc("v1", new OpenApiInfo { Title = title, Version = "v1", Description = desc });
 });
 
-// 6) Health checks
-builder.Services.AddHealthChecks()
-    .AddCheck<DbHealthCheck>("database");
+// 4) Capas internas (DI)
+var cnn =
+    config.GetConnectionString("PlantaDb") ??
+    config.GetConnectionString("SqlServer") ??
+    throw new InvalidOperationException("Falta ConnectionStrings:PlantaDb en appsettings.json.");
 
-// 7) Repositorios / Servicios
-builder.Services.AddScoped<ICatalogoRepository, CatalogoRepository>();
-builder.Services.AddScoped<IRecibosService, RecibosService>();
+Planta.Data.DependencyInjection.AddPlantaData(builder.Services, cnn); // DbContext + ISqlConnectionFactory
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(config);
 
-// 8) Infra transversal
-builder.Services.AddMemoryCache();
-builder.Services.AddResponseCaching(o =>
-{
-    o.UseCaseSensitivePaths = false;
-    o.MaximumBodySize = 1024 * 1024; // 1 MB
-});
+// 4.1) ReadStores y repos específicos de Transporte
+builder.Services.AddScoped<TransporteReadStore>();                         // ✅ consultas (placa/favoritos)
+builder.Services.AddScoped<ITransporteRepository, TransporteRepository>(); // ✅ writes auxiliares (históricos)
+
+// 5) Response Caching (ETag/manual)
+builder.Services.AddResponseCaching();
 
 var app = builder.Build();
 
-// (Opcional) Migrations/Seed según appsettings:Startup
-using (var scope = app.Services.CreateScope())
+// 6) Migraciones opcionales (solo DbContext)
+if (config.GetValue<bool>("Startup:RunMigrations"))
 {
-    var sp = scope.ServiceProvider;
-    var startup = sp.GetRequiredService<IOptions<StartupOptions>>().Value;
-
-    if (startup.RunMigrations)
-    {
-        var db = sp.GetRequiredService<PlantaDbContext>();
-        // db.Database.Migrate(); // si usas migraciones reales
-        db.Database.EnsureCreated(); // dev/simple
-    }
-
-    if (startup.RunSeed)
-    {
-        // TODO: seeder si aplica
-    }
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<Planta.Data.PlantaDbContext>();
+    db.Database.Migrate();
 }
 
-// -------- Pipeline --------
-if (app.Environment.IsDevelopment())
+// -------------------- HTTP Pipeline --------------------
+app.UseCors("default");
+
+var swaggerOn = config.GetValue<bool>("Swagger:Enabled", app.Environment.IsDevelopment());
+if (swaggerOn)
 {
     app.UseSwagger();
     app.UseSwaggerUI();
-    app.MapGet("/", () => Results.Redirect("/swagger"));
 }
 
-app.UseHttpsRedirection();
+// En Development no forzamos HTTPS (evita 307 en emuladores)
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHsts();
+    app.UseHttpsRedirection();
+}
 
-// 🔁 Middlewares base ANTES de ResponseCaching para no perder headers en respuestas cacheadas
-app.UseMiddleware<CorrelationIdMiddleware>();
-app.UseMiddleware<ErrorHandlingMiddleware>();
+// Auth opcional
+if (!config.GetValue<bool>("Auth:DisableAuth"))
+{
+    app.UseAuthentication();
+    app.UseAuthorization();
+}
 
-// CORS y cacheo de respuestas
-app.UseCors("Default");
 app.UseResponseCaching();
 
-app.UseAuthorization();
-
-static Task WriteHealth(HttpContext ctx, Microsoft.Extensions.Diagnostics.HealthChecks.HealthReport rpt)
-{
-    ctx.Response.ContentType = "application/json; charset=utf-8";
-    var payload = new
-    {
-        status = rpt.Status.ToString(),
-        checks = rpt.Entries.Select(e => new
-        {
-            name = e.Key,
-            status = e.Value.Status.ToString(),
-            desc = e.Value.Description
-        })
-    };
-    return ctx.Response.WriteAsync(JsonSerializer.Serialize(payload));
-}
-
 app.MapControllers();
-app.MapHealthChecks("/healthz", new HealthCheckOptions { ResponseWriter = WriteHealth });
+
+// Raíz → Swagger
+app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
+
+// Healthcheck simple
+app.MapGet("/health/ping", () => Results.Ok(new { ok = true, utc = DateTimeOffset.UtcNow }))
+   .ExcludeFromDescription();
 
 app.Run();
-
-// Visible para pruebas de integración (WebApplicationFactory)
-public partial class Program { }
